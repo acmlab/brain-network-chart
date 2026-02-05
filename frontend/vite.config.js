@@ -6,6 +6,11 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
+      '/api/planner': {
+        target: 'http://localhost:8011',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/planner/, '') 
+      },
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
@@ -15,6 +20,8 @@ export default defineConfig({
         target: 'http://127.0.0.1:8001',
         changeOrigin: true,
       },
+
+      
     }
   }
 })

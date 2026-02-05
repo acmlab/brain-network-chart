@@ -1516,24 +1516,54 @@ export default function UnifiedBrainApp() {
   const [selectedTask, setSelectedTask] = useState(null);
   const [selectedWindow, setSelectedWindow] = useState(0);
 
+  const [isProcessing, setIsProcessing] = useState(false);
+
   useEffect(() => { setTimeout(() => setIsLoading(false), 1500); }, []);
 
   const handleSendChat = async () => {
     const content = chatInput.trim();
-    if (!content) return;
+    if (!content || isProcessing) return;
+
     const nextMessages = [...chatMessages, { role: 'user', content }];
     setChatMessages(nextMessages);
-    setChatInput('');
+    setChatInput('');      
+    setIsProcessing(true); 
+
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: nextMessages, task_id: selectedTask, window_idx: selectedWindow }),
+      console.log("Connecting to backend: /api/planner/chat ...");
+
+      const res = await fetch('/api/planner/chat', {
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          query: content,
+          context: { 
+            current_view: activeView, 
+            task_id: selectedTask     
+          }
+        }),
       });
+
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => 'Unknown Server Error');
+        throw new Error(`Server responded with ${res.status}: ${errorText}`);
+      }
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || 'LLM request failed');
-      const reply = data.response || data.message || '';
-      setChatMessages(prev => [...prev, { role: 'assistant', content: reply || '(No response)' }]);
-    } catch (err) { setChatMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err.message}` }]); }
+      
+      const reply = data.response || data.message || JSON.stringify(data);
+
+      setChatMessages(prev => [...prev, { role: 'agent', content: reply }]);
+
+    } catch (err) { 
+      console.error(err);
+      setChatMessages(prev => [...prev, { 
+        role: 'agent', 
+        content: `⚠️ Error: Connection Error: ${err.message}. Could not connect to Planner Agent. Please check if Port 8011 is running.` 
+      }]); 
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const getViewTitle = () => {
@@ -1620,6 +1650,7 @@ export default function UnifiedBrainApp() {
         input={chatInput}
         onInputChange={setChatInput}
         onSend={handleSendChat}
+        isProcessing={isProcessing}
       />
 
       <style>{`
