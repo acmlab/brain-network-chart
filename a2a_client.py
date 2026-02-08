@@ -10,8 +10,8 @@ from __future__ import annotations
 import asyncio
 import sys
 
-# Local execution: use the planner agent from a2a_agents
-from a2a_agents import planner_agent
+# Local execution: use the planner agent from dedicated module
+from planner_agent import planner_agent
 
 
 async def run_planner(query: str) -> None:
