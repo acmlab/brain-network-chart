@@ -1,10 +1,6 @@
 """
 Brain Network Chart A2A agents.
 
-This file is intended to host multiple agents (planner, executor, researcher,
-validator, etc.) on main. On this branch we only implement the Planner and
-delegate its definition to `planner_agent.py`.
-
 Run as: python a2a_agents.py <agent_name> <port>
 e.g. python a2a_agents.py planner 8011
 """
