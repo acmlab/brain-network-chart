@@ -4,33 +4,38 @@ Planner agent definition for the Brain Network MAS.
 Pipeline order: Planner (1) → Executor (2) → Researcher (3) → Validator (4).
 
 This module is intentionally independent so it can be reused from:
-- A2A servers (e.g. small wrappers that expose the agent over HTTP)
-- Local clients / orchestrators
-- Other branches that define additional agents (executor, researcher, validator)
+- a2a_agents.py: use create_planner_agent() and get_planner_app() for the planner server.
+- A2A clients (e.g. a2a_client.py) call the Planner via HTTP; no direct import needed.
+- Other branches that define executor, researcher, validator.
 """
 
 from __future__ import annotations
 
+import os
 from typing import Literal
 
 from dotenv import load_dotenv
-
 from openai import AsyncOpenAI
-
-load_dotenv()
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
+load_dotenv()
+
 # -----------------------------------------------------------------------------
 # Configuration (edit these for your environment)
 # -----------------------------------------------------------------------------
-# Default: MedGemma via Ollama (Planner agent). For OpenAI set MODEL_NAME and OPENAI_API_KEY.
-MODEL_NAME = "MedAIBase/MedGemma1.5:4b"
-OLLAMA_HOST = "yukon.acm.unc.edu:11434"
-# Optional: use OpenAI instead (set in env or here):
-# MODEL_NAME = "openai:gpt-4o-mini"  # requires OPENAI_API_KEY in .env
+# Default: MedGemma via Ollama. For OpenAI set MODEL_NAME and OPENAI_API_KEY.
+# If a2a_agents sets OLLAMA_BASE_URL (e.g. http://host:11434), we use it for Ollama.
+MODEL_NAME = os.environ.get("PLANNER_MODEL", "MedAIBase/MedGemma1.5:4b")
+_OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "")
+if _OLLAMA_BASE_URL:
+    _u = _OLLAMA_BASE_URL.replace("https://", "").replace("http://", "").rstrip("/")
+    OLLAMA_HOST = _u
+else:
+    OLLAMA_HOST = "yukon.acm.unc.edu:11434"
+# Optional: use OpenAI for testing (set PLANNER_MODEL=openai:gpt-4o-mini and OPENAI_API_KEY in .env)
 
 
 # -----------------------------------------------------------------------------
@@ -85,7 +90,8 @@ def _get_planner_model():
     """Use OpenAI if MODEL_NAME starts with 'openai:', else Ollama (e.g. MedGemma)."""
     if MODEL_NAME.startswith("openai:"):
         return MODEL_NAME  # requires OPENAI_API_KEY in env
-    base_url = f"http://{OLLAMA_HOST}/v1"
+    base = _OLLAMA_BASE_URL.rstrip("/") if _OLLAMA_BASE_URL else f"http://{OLLAMA_HOST}"
+    base_url = f"{base}/v1" if not base.endswith("/v1") else base
     client = AsyncOpenAI(base_url=base_url, api_key="ollama")
     return OpenAIChatModel(
         MODEL_NAME,
@@ -126,7 +132,12 @@ planner_agent: Agent[None, ExecutionPlan] = Agent(
 )
 
 
+def create_planner_agent() -> Agent[None, ExecutionPlan]:
+    """Return the Planner agent. Used by a2a_agents.create_planner_app()."""
+    return planner_agent
+
+
 def get_planner_app():
-    """Return the ASGI app for the Planner A2A server."""
+    """Return the ASGI app for the Planner A2A server (a2a_agents or uvicorn)."""
     return planner_agent.to_a2a()
 

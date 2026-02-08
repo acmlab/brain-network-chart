@@ -1,6 +1,6 @@
 # Deploying the Planner Agent and Wiring the A2A Client
 
-This guide walks you through deploying the **Planner agent (MedGemma)** on your server and wiring an A2A client to call it and other agents.
+This guide walks you through deploying the **Planner agent (MedGemma)** on your server, then **running the full orchestrator** and wiring A2A clients to call the Planner and other agents (Executor, Researcher, Validator).
 
 ---
 
@@ -9,7 +9,7 @@ This guide walks you through deploying the **Planner agent (MedGemma)** on your 
 | Task | Status |
 |------|--------|
 | Planner agent (MedGemma) | ✅ Default model is `MedAIBase/MedGemma1.5:4b` via Ollama |
-| Deploy A2A client to call other agents: example | ✅ `a2a_client_http.py` calls Planner over HTTP and shows how to dispatch to Executor/Researcher/Validator |
+| Deploy A2A client to call other agents | ✅ Orchestrator (or `a2a_client.py` / HTTP client) calls Planner over HTTP; same pattern for Executor/Researcher/Validator |
 | Understand query | ✅ Planner produces `query_summary` in `ExecutionPlan` |
 | Plan tasks | ✅ Planner produces ordered `tasks` in `ExecutionPlan` |
 | Assign tasks to agents | ✅ Each task has `agent` (executor / researcher / validator) and optional `input_payload` |
@@ -71,49 +71,93 @@ Keep this process running (or run it under systemd/supervisor; see below).
 
 ## 4. Call the Planner from an A2A client
 
-From the same machine or another machine with network access to the server:
+From the same machine or another machine with network access to the server you can call the Planner over HTTP using the A2A protocol.
+
+**Option A – Local in-process (no HTTP):** use `a2a_client.py` to run the Planner in the same process and print the plan (good for quick tests).
 
 ```bash
-# Planner on same machine
-python a2a_client_http.py "Run hub detection on my fMRI data and validate the results."
-
-# Planner on a remote server
-set PLANNER_A2A_URL=http://your-server:8011
-python a2a_client_http.py "Run hub detection on my fMRI data and validate the results."
+python a2a_client.py "Run hub detection on my fMRI data and validate the results."
 ```
 
-Linux/Mac:
+**Option B – HTTP A2A client:** use any A2A client (e.g. your own script or the official A2A SDK) to send a `message/send` request to the Planner URL, then poll `tasks/get` until the task is completed. The plan is in `result.artifacts[0].parts[0].data.result` (see README for curl examples).
 
-```bash
-export PLANNER_A2A_URL=http://your-server:8011
-python a2a_client_http.py "Run hub detection on my fMRI data and validate the results."
-```
+Set the Planner URL via env when calling a remote server:
 
-The script will:
-
-1. Send the query to the Planner A2A server (HTTP, A2A protocol).
-2. Poll until the task completes.
-3. Print the execution plan (query summary + tasks per agent).
-4. Print how to call the other agents (Executor, Researcher, Validator) using the same A2A protocol.
+- Windows: `set PLANNER_A2A_URL=http://your-server:8011`
+- Linux/Mac: `export PLANNER_A2A_URL=http://your-server:8011`
 
 ---
 
-## 5. Wire up other agents (Executor, Researcher, Validator)
+## 5. Run the full orchestrator and wire up other agents
 
-When you run the Executor (and later Researcher, Validator) as separate A2A servers:
+The **full orchestrator** is the process that (1) calls the Planner to get an `ExecutionPlan`, then (2) calls the Executor, Researcher, and Validator A2A servers for each task in the plan. Each agent runs as its own A2A server; the orchestrator is the A2A client that ties them together.
 
-1. **Start each agent on its own port**, e.g.:
-   - Planner: `8011`
-   - Executor: `8012`
-   - Researcher: `8013`
-   - Validator: `8014`
+### 5.1 Start all agent servers
 
-2. **Orchestrator flow:**
-   - Call the Planner (e.g. with `a2a_client_http.py` or your own A2A client) to get an `ExecutionPlan`.
-   - For each task in `plan.tasks`, check `task.agent` and POST to the corresponding agent’s A2A URL using the same A2A protocol (`message/send`, then `tasks/get` until completed).
-   - Use `task.description` and `task.input_payload` as the input for that agent (e.g. Executor uses `input_payload.tool` and params to call the MCP server).
+Run each agent on its own port (four terminals or background processes):
 
-3. **Example:** For an `executor` task, your orchestrator would send a message to the Executor A2A server at `http://localhost:8012` with a body that includes the task’s description and `input_payload`; the Executor agent then runs the MCP tool and returns an `ExecutorResult`.
+```bash
+# Terminal 1 – Planner (must be first; produces the plan)
+python a2a_agents.py planner 8011
+
+# Terminal 2 – Executor (MCP tools, analysis)
+python a2a_agents.py executor 8012
+
+# Terminal 3 – Researcher (databases, stats)
+python a2a_agents.py researcher 8013
+
+# Terminal 4 – Validator (validates results)
+python a2a_agents.py validator 8014
+```
+
+Default host is `localhost`; to bind all interfaces use `--host 0.0.0.0` (and adjust firewall/URLs).
+
+**Port map:**
+
+| Agent     | Default port | Role                          |
+|----------|--------------|-------------------------------|
+| Planner  | 8011         | Understand query, plan tasks, assign to other agents |
+| Executor | 8012         | Run MCP tools (e.g. CFC, hub detection, growth curve) |
+| Researcher | 8013       | Statistical / literature search |
+| Validator | 8014        | Validate outputs and confirm query resolved |
+
+### 5.2 Orchestrator flow (high level)
+
+1. **Get the plan**
+   - Send the user query to the **Planner** A2A server (e.g. `http://localhost:8011`).
+   - Use A2A `message/send` with the query text in `params.message.parts` (e.g. `kind: "message"`, `role: "user"`, `parts: [{ "kind": "text", "text": "..." }]`).
+   - Poll `tasks/get` with the returned task `id` until `status.state` is `"completed"`.
+   - Read the **ExecutionPlan** from `result.artifacts[0].parts[0].data.result` (contains `query_summary` and `tasks`).
+
+2. **Run tasks in order**
+   - For each `task` in `plan.tasks` (already ordered by `task.order`):
+     - Choose the A2A server by `task.agent`:
+       - `executor` → e.g. `http://localhost:8012`
+       - `researcher` → e.g. `http://localhost:8013`
+       - `validator` → e.g. `http://localhost:8014`
+     - Send an A2A `message/send` to that server with input derived from `task.description` and `task.input_payload` (e.g. for Executor, `input_payload` may include `tool` and MCP parameters).
+     - Poll `tasks/get` until that task completes.
+     - Optionally pass the result (or a summary) into the next task or into the Validator.
+
+3. **Aggregate and return**
+   - After all tasks complete, the orchestrator returns (or forwards) the combined result to the frontend or caller.
+
+### 5.3 Environment variables for the orchestrator
+
+So the orchestrator can point at different hosts/ports, use env vars (or config) for each agent base URL:
+
+| Variable (example)   | Default / meaning        |
+|----------------------|--------------------------|
+| `PLANNER_A2A_URL`    | `http://localhost:8011`  |
+| `EXECUTOR_A2A_URL`   | `http://localhost:8012`  |
+| `RESEARCHER_A2A_URL` | `http://localhost:8013`  |
+| `VALIDATOR_A2A_URL`  | `http://localhost:8014`  |
+
+The orchestrator script (or frontend gateway) should read these and call the corresponding URL for each `task.agent`.
+
+### 5.4 Executor task input
+
+For tasks assigned to **executor**, the Planner fills `input_payload` with a `tool` name and tool-specific parameters (see `planner_agent.MCP_TOOL_NAMES` and the Planner instructions). The orchestrator sends this (e.g. as the user message or in a structured part) to the Executor A2A server; the Executor agent then calls the MCP backend and returns results (e.g. for the Researcher or Validator to consume).
 
 ---
 
@@ -159,18 +203,17 @@ Use `pythonw` or run in a separate terminal, or wrap with NSSM / Task Scheduler.
 
 1. **Planner only**
    - Start: `python a2a_agents.py planner 8011`
-   - Test: `python a2a_client_http.py "What analyses can you run?"`
-   - You should see a plan with tasks and agent assignments.
+   - Test (in-process): `python a2a_client.py "What analyses can you run?"`
+   - Or call over HTTP with an A2A client; you should see a plan with `query_summary` and `tasks` (executor / researcher / validator).
 
-2. **With Executor (when implemented)**
-   - Terminal 1: `python a2a_agents.py planner 8011`
-   - Terminal 2: `python a2a_agents.py executor 8012`
-   - Use the HTTP client to get a plan, then have your orchestrator send executor tasks to `http://localhost:8012`.
+2. **Full orchestrator (all four agents)**
+   - Start all four: `planner 8011`, `executor 8012`, `researcher 8013`, `validator 8014`.
+   - Run your orchestrator script with the user query; it should get the plan from the Planner, then send each task to the right agent URL and collect results.
 
 ---
 
 ## Summary
 
 - **Planner (MedGemma)** is the first agent; it understands the query, plans tasks, and assigns them to executor / researcher / validator.
-- **Deploy:** Install deps, run `python a2a_agents.py planner 8011` (optionally under systemd).
-- **Wire client:** Use `a2a_client_http.py` with `PLANNER_A2A_URL` pointing at your server; extend the same pattern to call Executor, Researcher, and Validator by their URLs.
+- **Deploy:** Install deps, run `python a2a_agents.py planner 8011` (optionally under systemd). For the full pipeline, run all four agents on 8011–8014.
+- **Full orchestrator:** Call the Planner A2A server to get an `ExecutionPlan`, then for each task call the corresponding agent (Executor / Researcher / Validator) via its A2A URL using `message/send` and `tasks/get`. Use `PLANNER_A2A_URL`, `EXECUTOR_A2A_URL`, etc. to configure base URLs.
