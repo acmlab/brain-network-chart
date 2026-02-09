@@ -11,6 +11,7 @@ This module is intentionally independent so it can be reused from:
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Literal
 
@@ -137,24 +138,80 @@ Your role:
 
    - validator: Validates results from the Executor and Researcher: checks consistency, confirms the original query is resolved, and reports confidence/issues/recommendations. Always assign a validator task after executor (and researcher if used) so the user gets a clear answer and quality check.
 
-Output a structured ExecutionPlan with:
-- query_summary: your understanding of what the user wants.
-- tasks: list of TaskAssignment, each with agent, description, order (1, 2, 3...), and optional input_payload.
+Output format:
+- You MUST respond with PURE JSON only, no markdown, no prose, no comments.
+- The JSON must match this ExecutionPlan schema exactly:
+
+{
+  "query_summary": "short summary string",
+  "tasks": [
+    {
+      "agent": "executor" | "researcher" | "validator",
+      "description": "what this task should do",
+      "order": 1,
+      "input_payload": { ... } | null
+    }
+  ]
+}
 
 Keep tasks ordered by dependency: run executor (and researcher if needed) before validator. When the user mentions CFC, hub detection, growth curve, normative analysis, sliding window, or CSV brain data, assign an executor task with the corresponding tool and sensible defaults for missing params.
 """
 
 
-planner_agent: Agent[None, ExecutionPlan] = Agent(
+# NOTE: We use plain-text JSON output (str) so that MedGemma via Ollama does NOT need
+# OpenAI-style tools/function-calling. Structured typing is enforced by our own
+# JSON parsing into the ExecutionPlan model below.
+planner_agent: Agent[None, str] = Agent(
     _get_planner_model(),
-    output_type=ExecutionPlan,
+    output_type=str,
     instructions=PLANNER_INSTRUCTIONS,
     name="planner",
     retries=2,
 )
 
 
-def create_planner_agent() -> Agent[None, ExecutionPlan]:
+async def run_planner(query: str) -> ExecutionPlan:
+    """Run the planner LLM and parse its JSON into an ExecutionPlan.
+
+    MedGemma (via Ollama) may sometimes wrap JSON with extra text; we robustly
+    extract the first {...} block before parsing.
+    """
+    result = await planner_agent.run(query)
+    if not result.output:
+        raise RuntimeError("Planner returned empty output")
+
+    text = result.output.strip()
+
+    # First try direct JSON parse
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        # Fallback: extract the first balanced {...} JSON object
+        start = text.find("{")
+        if start == -1:
+            raise RuntimeError(f"Planner output is not valid JSON: {text[:200]!r}")
+
+        depth = 0
+        end = None
+        for i, ch in enumerate(text[start:], start=start):
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i
+                    break
+
+        if end is None:
+            raise RuntimeError(f"Planner output has unbalanced braces: {text[:200]!r}")
+
+        snippet = text[start : end + 1]
+        data = json.loads(snippet)
+
+    return ExecutionPlan.model_validate(data)
+
+
+def create_planner_agent() -> Agent:
     """Return the Planner agent. Used by a2a_agents.create_planner_app()."""
     return planner_agent
 

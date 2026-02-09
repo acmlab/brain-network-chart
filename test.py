@@ -2,14 +2,14 @@
 Run mock user inquiries against the Planner agent (in-process) and print the returned plans.
 
 Usage:
-  python test_planner_queries.py                    # run all mock queries
-  python test_planner_queries.py --query "your text" # run one custom query
-  python test_planner_queries.py -n 1                # run only the first mock query
+  python test.py                    # run all mock queries
+  python test.py --query "your text" # run one custom query
+  python test.py -n 1                # run only the first mock query
 
-No A2A server required; uses planner_agent.run() directly.
+No A2A server required; uses planner_agent.run_planner() directly.
 
 If you get "Request timed out": the Planner calls the LLM (Ollama or OpenAI). Use OpenAI
-for quick tests (in planner_agent.py set MODEL_NAME = "openai:gpt-4o-mini" and set
+for quick tests (in planner_agent.py set PLANNER_MODEL=openai:gpt-4o-mini and set
 OPENAI_API_KEY in .env), or run Ollama locally (OLLAMA_HOST=localhost:11434). Remote
 Ollama may need VPN; timeout is configurable via PLANNER_LLM_TIMEOUT (default 120s).
 """
@@ -19,8 +19,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+import time
+import uuid
 
-from planner_agent import planner_agent
+import httpx
+from fasta2a.client import A2AClient
+from fasta2a.schema import Message, TextPart
+
+from planner_agent import ExecutionPlan
 
 # -----------------------------------------------------------------------------
 # Mock user inquiries — oral, conversational (clinicians / researchers)
@@ -49,7 +55,7 @@ MOCK_QUERIES = [
 # -----------------------------------------------------------------------------
 
 
-def print_plan(query: str, plan) -> None:
+def print_plan(query: str, plan: ExecutionPlan) -> None:
     """Pretty-print an ExecutionPlan."""
     print("─" * 60)
     print("Query:", query)
@@ -63,14 +69,83 @@ def print_plan(query: str, plan) -> None:
     print()
 
 
-async def run_one(query: str) -> bool:
-    """Run the Planner on one query; return True if success."""
+def build_user_message(text: str) -> Message:
+    """Build an A2A Message for the Planner."""
+    return Message(
+        role="user",
+        parts=[TextPart(kind="text", text=text)],
+        kind="message",
+        message_id=uuid.uuid4().hex,
+    )
+
+
+async def call_planner_http(query: str, base_url: str, timeout: float = 60.0) -> ExecutionPlan:
+    """Call the Planner A2A server over HTTP and return an ExecutionPlan."""
+    async with httpx.AsyncClient() as http_client:
+        client = A2AClient(base_url=base_url, http_client=http_client)
+        message = build_user_message(query)
+
+        response = await client.send_message(message)
+        if "error" in response:
+            raise RuntimeError(f"send_message error: {response['error']}")
+
+        task = response["result"]
+        task_id = task["id"]
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            get_resp = await client.get_task(task_id)
+            if "error" in get_resp:
+                raise RuntimeError(f"get_task error: {get_resp['error']}")
+            task = get_resp["result"]
+            state = task["status"]["state"]
+            if state == "completed":
+                break
+            if state in ("failed", "rejected", "canceled"):
+                raise RuntimeError(f"task ended with state={state}")
+            await asyncio.sleep(0.5)
+        else:
+            raise TimeoutError("Timeout waiting for Planner task to complete")
+
+        # Extract JSON from text artifact and parse into ExecutionPlan
+        artifacts = task.get("artifacts") or []
+        for art in artifacts:
+            for part in art.get("parts") or []:
+                if part.get("kind") == "text" and "text" in part:
+                    text = part["text"].strip()
+                    try:
+                        import json
+
+                        data = json.loads(text)
+                    except Exception:
+                        # Planner may have wrapped JSON; best-effort single-object extraction
+                        start = text.find("{")
+                        if start == -1:
+                            continue
+                        depth = 0
+                        end = None
+                        for i, ch in enumerate(text[start:], start=start):
+                            if ch == "{":
+                                depth += 1
+                            elif ch == "}":
+                                depth -= 1
+                                if depth == 0:
+                                    end = i
+                                    break
+                        if end is None:
+                            continue
+                        snippet = text[start : end + 1]
+                        data = json.loads(snippet)
+                    return ExecutionPlan.model_validate(data)
+
+        raise RuntimeError("No JSON ExecutionPlan artifact found in Planner task")
+
+
+async def run_one(query: str, base_url: str) -> bool:
+    """Run the Planner (over HTTP) on one query; return True if success."""
     try:
-        result = await planner_agent.run(query)
-        if result.output is None:
-            print("Planner returned no output for:", repr(query), "\n")
-            return False
-        print_plan(query, result.output)
+        plan = await call_planner_http(query, base_url)
+        print_plan(query, plan)
         return True
     except Exception as e:
         print(f"Error for query {repr(query)}: {e}\n", file=sys.stderr)
@@ -78,7 +153,7 @@ async def run_one(query: str) -> bool:
 
 
 async def main() -> int:
-    parser = argparse.ArgumentParser(description="Test Planner with mock user inquiries")
+    parser = argparse.ArgumentParser(description="Test Planner (A2A HTTP) with mock user inquiries")
     parser.add_argument(
         "-q", "--query",
         type=str,
@@ -90,6 +165,12 @@ async def main() -> int:
         default=None,
         help="Run only the first N mock queries (default: all)",
     )
+    parser.add_argument(
+        "--url",
+        type=str,
+        default="http://localhost:8012",
+        help="Base URL of Planner A2A server (default: http://localhost:8012)",
+    )
     args = parser.parse_args()
 
     if args.query:
@@ -98,12 +179,12 @@ async def main() -> int:
         n = args.num
         queries = MOCK_QUERIES[:n] if n is not None else MOCK_QUERIES
 
-    print("Planner agent: mock user inquiry test (in-process)")
+    print("Planner agent: mock user inquiry test (A2A HTTP)")
     print("Queries to run:", len(queries), "\n")
 
     ok = 0
     for q in queries:
-        if await run_one(q):
+        if await run_one(q, args.url):
             ok += 1
 
     print("─" * 60)
