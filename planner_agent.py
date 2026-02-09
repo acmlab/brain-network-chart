@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 from typing import Literal
 
+import httpx
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from pydantic import BaseModel, Field
@@ -26,8 +27,7 @@ load_dotenv()
 # -----------------------------------------------------------------------------
 # Configuration (edit these for your environment)
 # -----------------------------------------------------------------------------
-# Default: MedGemma via Ollama. For OpenAI set MODEL_NAME and OPENAI_API_KEY.
-# If a2a_agents sets OLLAMA_BASE_URL (e.g. http://host:11434), we use it for Ollama.
+# Default: MedGemma via Ollama. For OpenAI set PLANNER_MODEL=openai:gpt-4o-mini and OPENAI_API_KEY in .env.
 MODEL_NAME = os.environ.get("PLANNER_MODEL", "MedAIBase/MedGemma1.5:4b")
 _OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "")
 if _OLLAMA_BASE_URL:
@@ -35,7 +35,7 @@ if _OLLAMA_BASE_URL:
     OLLAMA_HOST = _u
 else:
     OLLAMA_HOST = "yukon.acm.unc.edu:11434"
-# Optional: use OpenAI for testing (set PLANNER_MODEL=openai:gpt-4o-mini and OPENAI_API_KEY in .env)
+# To use MedGemma: set PLANNER_MODEL=MedAIBase/MedGemma1.5:4b and ensure Ollama is reachable at OLLAMA_HOST.
 
 
 # -----------------------------------------------------------------------------
@@ -69,16 +69,19 @@ class ExecutionPlan(BaseModel):
 
 
 # -----------------------------------------------------------------------------
-# MCP server context (Executor / Validator call this backend)
+# Brain Network Analysis MCP server (Executor calls this backend)
 # -----------------------------------------------------------------------------
-# Brain Network Analysis MCP server: HTTP REST API for analysis tools.
-# Base URL typically: http://yukon.acm.unc.edu:8010 (see README).
-# Executor tasks should use input_payload with a "tool" and tool-specific params.
+# Model Context Protocol (MCP) server for brain network analysis: signal processing
+# and graph-based hub detection. HTTP REST API (FastMCP) on yukon.acm.unc.edu:8010.
+# Features: progress streaming, timestamped logging, async-ready (Starlette).
+# Executor tasks use input_payload with "tool" and tool-specific params.
+
+MCP_SERVER_BASE_URL = "http://yukon.acm.unc.edu:8010"
 
 MCP_TOOL_NAMES = (
-    "run_cfc_wavelet_analysis",  # CFC wavelet analysis on BOLD connectivity
+    "run_cfc_wavelet_analysis",  # CFC wavelet analysis
     "run_hub_detection",         # Hub detection (single or multi-network)
-    "get_growth_curve",          # Growth curve / developmental phenotype
+    "get_growth_curve",          # Growth curve / developmental trajectory
     "run_normative_analysis",    # Normative analysis with overlay data
 )
 
@@ -86,13 +89,24 @@ MCP_TOOL_NAMES = (
 # Model and Planner agent
 # -----------------------------------------------------------------------------
 
+# Timeout for LLM requests (Ollama/remote can be slow; default httpx is ~5s).
+LLM_TIMEOUT_SECONDS = float(os.environ.get("PLANNER_LLM_TIMEOUT", "120.0"))
+
+
 def _get_planner_model():
     """Use OpenAI if MODEL_NAME starts with 'openai:', else Ollama (e.g. MedGemma)."""
     if MODEL_NAME.startswith("openai:"):
         return MODEL_NAME  # requires OPENAI_API_KEY in env
     base = _OLLAMA_BASE_URL.rstrip("/") if _OLLAMA_BASE_URL else f"http://{OLLAMA_HOST}"
     base_url = f"{base}/v1" if not base.endswith("/v1") else base
-    client = AsyncOpenAI(base_url=base_url, api_key="ollama")
+    # Use a longer timeout for Ollama (remote or slow model)
+    timeout = httpx.Timeout(LLM_TIMEOUT_SECONDS, connect=30.0)
+    http_client = httpx.AsyncClient(timeout=timeout)
+    client = AsyncOpenAI(
+        base_url=base_url,
+        api_key="ollama",
+        http_client=http_client,
+    )
     return OpenAIChatModel(
         MODEL_NAME,
         provider=OpenAIProvider(openai_client=client),
@@ -101,25 +115,33 @@ def _get_planner_model():
 
 PLANNER_INSTRUCTIONS = """
 You are the Planner agent in a brain network / fMRI analysis multi-agent system.
+The Executor calls a Brain Network Analysis MCP server (HTTP REST API at yukon.acm.unc.edu:8010)
+with progress streaming, timestamped logging, and async-ready processing.
 
 Your role:
 1. Understand the user's query (analysis requests, visualization, data questions).
 2. Create an execution plan: a sequence of tasks.
-3. Assign each task to exactly one of these agents:
-   - executor: Runs MCP tools for brain network analysis. Available tools (use input_payload.tool and params):
-     * run_cfc_wavelet_analysis: Cross-frequency coupling wavelet analysis. Params: data_path, window_size, step_size, padding, ratio, wavelets_num, beta, gamma, max_iter, node_select.
-     * run_hub_detection: Hub detection in single or multiple networks. Params: data_path, window_size, step_size, padding, ratio, k, hub_num, use_group.
-     * get_growth_curve: Developmental trajectory / growth curve. Params: phenotype (e.g. "Global mean of FC", "Global system segregation").
-     * run_normative_analysis: Normative analysis with overlay data. Params: x_phenotype, y_path, age_col, val_col.
-     For executor tasks, set input_payload to {"tool": "<tool_name>", ...params}. Include data_path when the user refers to "my data" or a file (e.g. after upload).
-   - researcher: Statistical analysis, literature/database searches, evidence lookup.
-   - validator: Validates results, checks consistency, confirms the query is resolved.
+3. Assign each task to exactly one of these agents.
+
+   Users submit queries (and often upload BOLD or FC matrices) through a frontend UI; uploads are handled securely there. When the user refers to uploaded data, "the data I attached", "my BOLD", "my FC matrix", or similar, set data_path in executor input_payload to a clear reference (e.g. "uploaded_bold", "uploaded_fc"). The orchestrator receives the actual secure path from the frontend and substitutes it when calling the executor—you do not need to know or emit real file paths.
+
+   - executor: Runs MCP tools for brain network analysis. Available tools (set input_payload.tool and params):
+     * run_cfc_wavelet_analysis — Cross-frequency coupling (CFC) wavelet analysis: compute harmonic wavelets from brain network adjacency matrices with iterative optimization and error tracking. Params: data_path, window_size, step_size, padding, ratio, wavelets_num, beta, gamma, max_iter, node_select. Use when the user asks for CFC, cross-frequency coupling, wavelet analysis, or harmonic analysis of connectivity.
+     * run_hub_detection — Hub detection: identify critical hub nodes. Single-network via spectral embedding; multi-network via Grassmann manifold optimization. Params: data_path, window_size, step_size, padding, ratio, k, hub_num, use_group. Use when the user asks for hub detection, critical nodes, single-network or multi-network hub analysis.
+     * get_growth_curve — Normative developmental trajectory: growth curves and normative curves for brain metrics (e.g. global mean FC, system segregation). Params: phenotype (e.g. "Global mean of FC", "Global system segregation"). Use when the user asks for developmental trajectory, growth curve, normative curve, or phenotype over age.
+     * run_normative_analysis — Normative analysis with overlay data. Params: x_phenotype, y_path, age_col, val_col. Use when the user asks for normative comparison, overlay, or age-matched norms.
+     Data loading: the server can read brain activity from CSV with sliding-window extraction. Users upload BOLD/FC via the frontend UI (secure). Always include data_path in executor input_payload when they refer to "my data", uploaded matrices, or an attached file—use a reference like "uploaded_bold" or "uploaded_fc"; the frontend/orchestrator supplies the real path when invoking the executor.
+     For executor tasks, set input_payload to {"tool": "<tool_name>", "data_path": "<reference or path>", ...params}.
+
+   - researcher: Statistical analysis, literature/database searches, evidence lookup. Use when the user needs literature, PubMed, or statistical interpretation of results.
+
+   - validator: Validates results from the Executor and Researcher: checks consistency, confirms the original query is resolved, and reports confidence/issues/recommendations. Always assign a validator task after executor (and researcher if used) so the user gets a clear answer and quality check.
 
 Output a structured ExecutionPlan with:
 - query_summary: your understanding of what the user wants.
 - tasks: list of TaskAssignment, each with agent, description, order (1, 2, 3...), and optional input_payload.
 
-Keep tasks focused and ordered by dependency (e.g. run analysis before validation). When the user asks for CFC, hub detection, growth curves, or normative analysis, assign an executor task with the corresponding tool and sensible defaults for missing params.
+Keep tasks ordered by dependency: run executor (and researcher if needed) before validator. When the user mentions CFC, hub detection, growth curve, normative analysis, sliding window, or CSV brain data, assign an executor task with the corresponding tool and sensible defaults for missing params.
 """
 
 
