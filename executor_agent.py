@@ -30,7 +30,7 @@ PLANNER_PORT = int(os.getenv("PLANNER_PORT", "8011"))
 UPLOAD_DIR = Path("/tmp/executor_uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# ===== MODEL SELECTION LOGIC (Kaggle HAI-DEF Requirement) =====
+# ===== MODEL SELECTION LOGIC =====
 
 def select_model(task: str) -> str:
     """
@@ -52,7 +52,7 @@ def select_model(task: str) -> str:
         "research": "MedAIBase/MedGemma1.5:4b"              # Literature analysis
     }
     
-    selected = "MedAIBase/MedGemma1.5:4b"
+    selected = model_map.get(task, "MedAIBase/MedGemma1.5:4b")
     logger.info(f"Model selected for '{task}': {selected}")
     return selected
 
@@ -63,7 +63,7 @@ class AgentCard(BaseModel):
     name: str = "Executor Agent"
     description: str = "Orchestrates neuroimaging tools and medical literature research"
     version: str = "2.1.0"
-    agent_id: str = "executor_asthav"
+    agent_id: str = "executor_agent"
     port: int = EXECUTOR_PORT
     capabilities: List[str] = [
         "PubMed literature search",
@@ -177,13 +177,13 @@ class ErrorResponse(BaseModel):
     error_type: str = Field(..., description="Error category for programmatic handling")
     error_message: str = Field(..., description="Human-readable error description")
     failed_component: str = Field(..., description="Which component failed (MCP, LLM, parsing, etc.)")
-    agent_id: str = "executor_asthav"
+    agent_id: str = "executor_agent"
     port: int = EXECUTOR_PORT
     
 class SuccessResponse(BaseModel):
     """Standardized success response"""
     status: str = "success"
-    agent_id: str = "executor_asthav"
+    agent_id: str = "executor_agent"
     port: int = EXECUTOR_PORT
 
 # ===== A2A CLIENT FOR INTER-AGENT COMMUNICATION =====
@@ -260,11 +260,11 @@ class HTTPClientManager:
         # Initialize A2A clients for inter-agent communication
         cls.researcher_client = A2AClient(
             f"http://localhost:{RESEARCHER_PORT}",
-            "researcher_andy"
+            "researcher_agent"
         )
         cls.validator_client = A2AClient(
             f"http://localhost:{VALIDATOR_PORT}",
-            "validator_lakshin"
+            "validator_agent"
         )
         
         logger.info("HTTP client and A2A clients initialized")
@@ -283,7 +283,7 @@ async def lifespan(app: FastAPI):
     """FastAPI lifespan event handler for startup/shutdown"""
     # Startup
     await HTTPClientManager.start()
-    logger.info(f"Executor Agent (Asthav) started on port {EXECUTOR_PORT}")
+    logger.info(f"Executor Agent started on port {EXECUTOR_PORT}")
     logger.info(f"A2A Server Mode: Enabled")
     logger.info(f"Upload directory: {UPLOAD_DIR}")
     yield
@@ -396,7 +396,7 @@ async def a2a_invoke(request: Request):
             id=getattr(message, 'id', None) if 'message' in locals() else None
         ).dict()
 
-# ===== FILE LIFECYCLE ENDPOINTS (MCP Requirement) =====
+# ===== FILE LIFECYCLE ENDPOINTS  =====
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
@@ -444,7 +444,7 @@ async def upload_file(file: UploadFile = File(...)):
             "file_name": file.filename,
             "file_size": len(content),
             "upload_path": str(file_path),
-            "agent_id": "executor_asthav"
+            "agent_id": "executor_agent"
         }
         
     except Exception as e:
@@ -478,7 +478,7 @@ async def delete_file(filename: str):
         return {
             "status": "success",
             "deleted": filename,
-            "agent_id": "executor_asthav"
+            "agent_id": "executor_agent"
         }
         
     except Exception as e:
@@ -504,7 +504,7 @@ async def list_files():
             "status": "success",
             "files": files,
             "count": len(files),
-            "agent_id": "executor_asthav"
+            "agent_id": "executor_agent"
         }
         
     except Exception as e:
@@ -562,7 +562,7 @@ async def _execute_research_logic(request: ResearchRequest) -> Dict[str, Any]:
         raise RuntimeError("HTTP client not initialized")
     
     try:
-        # Step 1: Broad Scholarly Search via Xiyun's combined pipeline (OpenAlex -> Crossref)
+        # Step 1: Broad Scholarly Search via combined pipeline (OpenAlex -> Crossref)
         logger.info(f"Executing scholarly search: {request.query}")
         search_res = await client.post(
             f"{MCP_URL}/search_pubmed",  # Combined pipeline endpoint
@@ -578,7 +578,7 @@ async def _execute_research_logic(request: ResearchRequest) -> Dict[str, Any]:
             logger.warning(f"No results found for query: {request.query}")
             return {
                 "status": "partial_success",
-                "agent_id": "executor_asthav",
+                "agent_id": "executor_agent",
                 "data_payload": {
                     "original_query": request.query,
                     "analysis_result": "No relevant PubMed articles were found for this query.",
@@ -640,7 +640,7 @@ async def _execute_research_logic(request: ResearchRequest) -> Dict[str, Any]:
         # Step 5: Prepare standardized payload
         payload = {
             "status": "success",
-            "agent_id": "executor_asthav",
+            "agent_id": "executor_agent",
             "data_payload": {
                 "original_query": request.query,
                 "analysis_result": llm_analysis,
@@ -718,7 +718,7 @@ async def _analyze_traits_logic(request: TraitAnalysisRequest) -> Dict[str, Any]
                 f"No trait data returned from {request.analysis_type} analysis"
             )
             
-            # Step 3: Apply statistical analysis via Lakshin's tools
+            # Step 3: Apply statistical analysis via tools
             try:
                 logger.info("Running statistical validation on trait data...")
                 # Detect outliers
@@ -752,7 +752,7 @@ async def _analyze_traits_logic(request: TraitAnalysisRequest) -> Dict[str, Any]
                 "file_analyzed": request.file_name,
                 "statistical_summary": stats_summary,
                 "status": "success",
-                "agent_id": "executor_asthav",
+                "agent_id": "executor_agent",
                 "timestamp": datetime.now().isoformat(),
                 "metadata": {
                     "mcp_endpoint": endpoint,
@@ -767,7 +767,7 @@ async def _analyze_traits_logic(request: TraitAnalysisRequest) -> Dict[str, Any]
                 "analysis_type": request.analysis_type,
                 "file_analyzed": request.file_name,
                 "status": "fallback_mode",
-                "agent_id": "executor_asthav"
+                "agent_id": "executor_agent"
             }
         
     except Exception as e:
@@ -781,7 +781,7 @@ async def root():
     """Health check and agent identification endpoint"""
     return {
         "message": "Executor Agent is Online (A2A Mode)",
-        "agent_id": "executor_asthav",
+        "agent_id": "executor_agent",
         "port": EXECUTOR_PORT,
         "protocol": "A2A (JSON-RPC 2.0)",
         "role": "Executor Agent",
