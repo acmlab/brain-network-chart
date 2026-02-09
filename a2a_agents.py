@@ -20,9 +20,9 @@ from pydantic_ai.providers.openai import OpenAIProvider
 # Configuration (edit these for your environment)
 # -----------------------------------------------------------------------------
 # For quick testing with OpenAI (set OPENAI_API_KEY in env):
-MODEL_NAME = "openai:gpt-4o-mini"
+# MODEL_NAME = "openai:gpt-4o-mini"
 # For Ollama (local or remote):
-# MODEL_NAME = "MedAIBase/MedGemma1.5:4b"
+MODEL_NAME = "MedAIBase/MedGemma1.5:4b"
 # OLLAMA_HOST = "yukon.acm.unc.edu:11434"  # or "localhost:11434"
 OLLAMA_HOST = "yukon.acm.unc.edu:11434"
 
