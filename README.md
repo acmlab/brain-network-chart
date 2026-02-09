@@ -24,21 +24,21 @@ pip install -r requirements.txt
 # Optional: .env with OPENAI_API_KEY (default); or set PLANNER_MODEL=MedAIBase/MedGemma1.5:4b for Ollama
 ```
 
-**Run Planner only:**  
+**Run Planner only (A2A server):**  
 `python a2a_agents.py planner 8011`  
 → A2A server on `http://localhost:8011`
 
-**Test in-process (no server):**  
-`python test_planner_queries.py -n 1`  
-`python a2a_client.py "Your query"`
+**Test Planner over HTTP (A2A):**  
+Run the Planner on port 8011 as above, then from another shell:  
+`python test.py` (uses default `http://localhost:8011`)  
+or override: `python test.py --url http://localhost:8012`
 
 
 ## Wiring with other agents
 
 1. **Start agents** (each on its port):  
-   `python a2a_agents.py planner 8011`  
-   `python a2a_agents.py executor 8012`  
-   (researcher 8013, validator 8014 when implemented)
+   `python a2a_agents.py planner 8011`   
+   (executor 8012, researcher 8013, validator 8014 when implemented)
 
 2. **Orchestrator:**  
    - POST to Planner (8011) with user query → A2A `message/send`, then `tasks/get` for task id and result.  
@@ -56,8 +56,8 @@ pip install -r requirements.txt
 |------|---------|
 | **planner_agent.py** | Planner agent + `ExecutionPlan`; used by a2a_agents for planner. |
 | **a2a_agents.py** | Run any agent as A2A server: `python a2a_agents.py <planner\|executor\|researcher\|validator> <port>`. |
-| **a2a_client.py** | Example A2A client (calls Planner over HTTP). |
-| **test_planner_queries.py** | Mock user queries against Planner (in-process). |
+| **a2a_client.py** | Example A2A client (simple A2A call to Planner). |
+| **test.py** | Mock user queries against Planner **over HTTP A2A** (hits `http://localhost:8011` by default). |
 
 ---
 
