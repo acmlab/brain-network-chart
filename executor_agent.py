@@ -565,34 +565,55 @@ async def _execute_research_logic(request: ResearchRequest) -> Dict[str, Any]:
         # Step 1: Broad Scholarly Search via Xiyun's combined pipeline (OpenAlex -> Crossref)
         logger.info(f"Executing scholarly search: {request.query}")
         search_res = await client.post(
-            f"{MCP_URL}/internet_search",  # Combined pipeline endpoint
+            f"{MCP_URL}/search_pubmed",  # Combined pipeline endpoint
             json={"query": request.query},
             timeout=30.0
         )
         search_res.raise_for_status()
         search_results = search_res.json().get("results", [])
+
+        model = select_model("clinical_analysis")  # MedGemma for medical domain
+
+        if not search_results:
+            logger.warning(f"No results found for query: {request.query}")
+            return {
+                "status": "partial_success",
+                "agent_id": "executor_asthav",
+                "data_payload": {
+                    "original_query": request.query,
+                    "analysis_result": "No relevant PubMed articles were found for this query.",
+                    "tabular_evidence": "No scholarly results found.",
+                    "tool_used": "search_pubmed"
+                },
+                "metadata": {
+                    "source_count": 0,
+                    "model": model, # Now 'model' is defined!
+                    "timestamp": datetime.now().isoformat()
+                }
+            }
         
         # Step 2: Parse results for the Researcher Agent
-        results_table = safe_dataframe_to_markdown(
-            search_results[:5],  # Top 5 most relevant for token efficiency
-            "No scholarly results found."
-        )
+        results_table = "\n".join([
+            f"- {r.get('title')} ({r.get('year')})" 
+            for r in search_results[:5]
+        ])
+
         
-        # Step 3: Clinical Analysis via MedGemma LLM (model selection)
-        model = select_model("clinical_analysis")  # MedGemma for medical domain
-        
+        # Step 3: Clinical Analysis via MedGemma LLM
         prompt = (
-            f"Analyze these scholarly findings for clinical relevance:\n\n"
-            f"{results_table}\n\n"
-            f"Query: {request.query}\n\n"
-            f"Summarize the consensus on neuroimaging traits found here."
+            f"<start_of_turn>user\n"
+            f"Based on these papers:\n{results_table}\n\n"
+            f"Task: Briefly summarize the role of BOLD connectivity in 2 sentences.<end_of_turn>\n"
+            f"<start_of_turn>model\n"
+            f"Based on the research provided,"
         )
         
         logger.info(f"Calling LLM ({model}) for analysis...")
         llm_res = await client.post(
             LLM_URL,
-            json={"model": model, "prompt": prompt, "stream": False},
-            timeout=60.0
+            json={"model": model, "prompt": prompt, "stream": False, "options": {"temperature": 0.1, 
+            "repeat_penalty": 1.2, "num_ctx": 4096, "num_predict": 512, "top_p": 0.9}},
+            timeout=120.0
         )
         llm_res.raise_for_status()
         llm_analysis = llm_res.json().get("response", "Analysis failed.")
@@ -626,7 +647,7 @@ async def _execute_research_logic(request: ResearchRequest) -> Dict[str, Any]:
                 "tabular_evidence": results_table,  # IMPORTANT: Included for validator
                 "refined_keywords": refined_keywords,
                 "researcher_contribution": researcher_analysis,
-                "tool_used": "internet_search_pipeline"
+                "tool_used": "search_pubmed"
             },
             "metadata": {
                 "source_count": len(search_results),
@@ -645,7 +666,7 @@ async def _execute_research_logic(request: ResearchRequest) -> Dict[str, Any]:
                     "original_query": request.query,
                     "analysis_result": llm_analysis,
                     "tabular_evidence": results_table,  # ADDED: Strengthens hallucination detection
-                    "tool_used": "internet_search_pipeline"
+                    "tool_used": "search_pubmed"
                 }
             )
             payload["validation"] = validation_result
