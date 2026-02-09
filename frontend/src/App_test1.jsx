@@ -897,12 +897,40 @@ const NetworkAnalysisView = ({ mode }) => {
   const [chatInput, setChatInput] = useState('');
   const [hoveredNodeId, setHoveredNodeId] = useState(null);
 
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // const loadTasks = async () => {
+  //   try {
+  //     const res = await fetch('/api/tasks');
+  //     const data = await res.json();
+  //     setTasks(data.tasks || []);
+  //   } catch (err) { console.error('Failed to load tasks:', err); }
+  // };
   const loadTasks = async () => {
     try {
-      const res = await fetch('/api/tasks');
-      const data = await res.json();
-      setTasks(data.tasks || []);
-    } catch (err) { console.error('Failed to load tasks:', err); }
+      const response = await fetch('http://localhost:8011/api/tasks');
+      
+      // 检查响应状态
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      // 检查响应是否有内容
+      const text = await response.text();
+      if (!text) {
+        console.warn('Empty response from /api/tasks');
+        setTasks([]);
+        return;
+      }
+      
+      // 解析 JSON
+      const data = JSON.parse(text);
+      setTasks(data);
+    } catch (error) {
+      console.error('Failed to load tasks:', error);
+      // 设置默认空数组,避免应用崩溃
+      setTasks([]);
+    }
   };
 
   const loadTaskDetail = async (taskId) => {
@@ -931,7 +959,7 @@ const NetworkAnalysisView = ({ mode }) => {
     setChatMessages(nextMessages);
     setChatInput('');
     try {
-      const res = await fetch('/api/chat', {
+      const res = await fetch('http://localhost:8011/api/chat', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: nextMessages, task_id: selectedTask, window_idx: selectedWindow }),
       });
@@ -1532,7 +1560,7 @@ export default function UnifiedBrainApp() {
     try {
       console.log("Connecting to backend: /api/planner/chat ...");
 
-      const res = await fetch('/api/planner/chat', {
+      const res = await fetch('http://localhost:8011/api/planner/chat', {
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

@@ -1,131 +1,313 @@
 """
-Brain Network Chart A2A agents.
-Run as: python a2a_agents.py <agent_name> <port>
-e.g. python a2a_agents.py planner 8011
+A2A Agents: Individual agent servers using pydantic-ai
+Each agent runs as its own FastAPI A2A server.
+
+To run all agents:
+  python a2a_agents.py planner 8011 &
+  python a2a_agents.py executor 8012 &
+  python a2a_agents.py researcher 8013 &
+  python a2a_agents.py validator 8014 &
 """
 
-from __future__ import annotations
-
-import argparse
 import sys
-from typing import Literal
+import asyncio
+import os
+# from typing import Optional
+# from pydantic_ai import Agent
+# import uvicorn
+# from fastapi.middleware.cors import CORSMiddleware
+# from fastapi import FastAPI
 
-from openai import AsyncOpenAI
-from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any
 from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openai import OpenAIProvider
+import uvicorn
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Request
 
-# -----------------------------------------------------------------------------
-# Configuration (edit these for your environment)
-# -----------------------------------------------------------------------------
-# For quick testing with OpenAI (set OPENAI_API_KEY in env):
-# MODEL_NAME = "openai:gpt-4o-mini"
-# For Ollama (local or remote):
-MODEL_NAME = "MedAIBase/MedGemma1.5:4b"
-# OLLAMA_HOST = "yukon.acm.unc.edu:11434"  # or "localhost:11434"
-OLLAMA_HOST = "yukon.acm.unc.edu:11434"
+# app = FastAPI()
 
-# -----------------------------------------------------------------------------
-# Planner: structured output types
-# -----------------------------------------------------------------------------
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=["*"],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
-AgentName = Literal["executor", "researcher", "validator"]
+# Ollama Configuration
+# OLLAMA_HOST = "yukon.acm.unc.edu:11434"
+OLLAMA_HOST = "localhost:11434"
+# MODEL_NAME = "MedAIBase/MedGemma1.5:4b"
+MODEL_NAME = "Huzderu/txgemma-27B-chat-Q8_0_GGUF:latest"
+OLLAMA_BASE_URL = f"http://{OLLAMA_HOST}/v1"
+a2a_host = 'localhost'
+# Set environment variable for Ollama
+os.environ["OLLAMA_BASE_URL"] = OLLAMA_BASE_URL
 
 
-class TaskAssignment(BaseModel):
-    """A single task assigned to one agent."""
+# ============================================================================
+# Define Agents
+# ============================================================================
 
-    agent: AgentName = Field(description="Which agent should perform this task")
-    description: str = Field(description="Clear description of what the agent should do")
-    order: int = Field(ge=1, description="Execution order (1-based)")
-    input_payload: dict | None = Field(
-        default=None,
-        description="Optional structured input for the agent (e.g. query, filters)",
+def create_planner_agent() -> Agent:
+    """Agent 1: Parse query and create task plan"""
+    return Agent(
+        f"ollama:{MODEL_NAME}",
+        name="planner",
+        instructions="""You are a planning agent. Analyze the user's query and create a brief 
+execution plan with 3 tasks: executor, researcher, and validator.
+Keep response concise with task descriptions only."""
     )
 
 
-class ExecutionPlan(BaseModel):
-    """Plan produced by the Planner: understood query and tasks per agent."""
-
-    query_summary: str = Field(
-        description="Short summary showing understanding of the user's query"
-    )
-    tasks: list[TaskAssignment] = Field(
-        description="Ordered list of tasks to assign to executor, researcher, or validator"
-    )
-
-
-# -----------------------------------------------------------------------------
-# Model and Planner agent
-# -----------------------------------------------------------------------------
-
-def _get_planner_model():
-    """Use OpenAI API if MODEL_NAME starts with 'openai:', else Ollama."""
-    if MODEL_NAME.startswith("openai:"):
-        return MODEL_NAME  # pydantic-ai uses OPENAI_API_KEY from env
-    base_url = f"http://{OLLAMA_HOST}/v1"
-    client = AsyncOpenAI(base_url=base_url, api_key="ollama")
-    return OpenAIChatModel(
-        MODEL_NAME,
-        provider=OpenAIProvider(openai_client=client),
+def create_executor_agent() -> Agent:
+    """Agent 2: Use MCP tools for input-to-trait analysis"""
+    return Agent(
+        f"ollama:{MODEL_NAME}",
+        name="executor",
+        instructions="""You are an executor agent. You select MCP tools (input-to-trait analysis),
+configure parameters, execute analysis, and extract keywords for the researcher.
+Format: Tool choice, Config, Results as table, 3-5 keywords."""
     )
 
 
-PLANNER_INSTRUCTIONS = """
-You are the Planner agent in a brain network / fMRI analysis multi-agent system.
-
-Your role:
-1. Understand the user's query (analysis requests, visualization, data questions).
-2. Create an execution plan: a sequence of tasks.
-3. Assign each task to exactly one of these agents:
-   - executor: Runs MCP tools, input-to-trait analysis, data processing pipelines.
-   - researcher: Statistical analysis, literature/database searches, evidence lookup.
-   - validator: Validates results, checks consistency, confirms the query is resolved.
-
-Output a structured ExecutionPlan with:
-- query_summary: your understanding of what the user wants.
-- tasks: list of TaskAssignment, each with agent, description, order (1, 2, 3...), and optional input_payload.
-
-Keep tasks focused and ordered by dependency (e.g. run analysis before validation).
-"""
+def create_researcher_agent() -> Agent:
+    """Agent 3: Statistical analysis and database search"""
+    return Agent(
+        f"ollama:{MODEL_NAME}",
+        name="researcher",
+        instructions="""You are a researcher agent. You search PubMed and DuckDuckGo databases
+for the given keywords, perform statistical analysis, and determine if executor
+config needs updating. Respond with: databases used, findings, config update needed (yes/no)."""
+    )
 
 
-planner_agent: Agent[None, ExecutionPlan] = Agent(
-    _get_planner_model(),
-    output_type=ExecutionPlan,
-    instructions=PLANNER_INSTRUCTIONS,
-    name="planner",
-    retries=2,
-)
+def create_validator_agent() -> Agent:
+    """Agent 4: Validate all outputs"""
+    return Agent(
+        f"ollama:{MODEL_NAME}",
+        name="validator",
+        instructions="""You are a validator agent. Check if the original query was answered
+by the executor and researcher results. Provide: is_valid (yes/no), query_answered (yes/no),
+confidence (0-100%), issues, and recommendations."""
+    )
 
 
-def get_planner_app():
-    """Return the ASGI app for the Planner A2A server."""
-    return planner_agent.to_a2a()
+# ============================================================================
+# Agent Servers
+# ============================================================================
+
+# def create_planner_app():
+#     """Create planner A2A server"""
+#     agent = create_planner_agent()
+#     return agent.to_a2a()
+
+def create_planner_app():
+    """Create planner REST API server"""
+    agent = create_planner_agent()  # ✅ 使用 pydantic-ai
+    app = FastAPI()
+    
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    @app.post("/api/planner/chat")
+    async def planner_chat_endpoint(request: Request):
+        try:
+            body = await request.json()
+            query = body.get("query", "")
+            print(f"[DEBUG] Received query: {query}")
+            
+            if not query:
+                return {"response": "Error: No query provided"}
+            
+            print(f"[DEBUG] Calling pydantic-ai agent...")
+            result = await agent.run(query)
+            
+            # ✅ 使用 result.output
+            reply = str(result.output)
+            print(f"[DEBUG] Got response: {reply[:100]}...")
+            
+            return {"response": reply, "message": reply}
+                
+        except Exception as e:
+            print(f"[ERROR] Exception: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"response": f"Error: {str(e)}"}
+    
+    @app.get("/api/tasks")
+    async def get_tasks():
+        return {"tasks": []}
+    
+    return app
 
 
-# -----------------------------------------------------------------------------
-# CLI: run agent as A2A server
-# -----------------------------------------------------------------------------
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Run a Brain Network A2A agent server")
-    parser.add_argument("agent", choices=["planner"], help="Agent to run")
-    parser.add_argument("port", type=int, help="Port to bind (e.g. 8011)")
-    parser.add_argument("--host", default="0.0.0.0", help="Host to bind")
-    args = parser.parse_args()
+# def create_executor_app():
+#     """Create executor A2A server"""
+#     agent = create_executor_agent()
+#     return agent.to_a2a()
 
-    if args.agent == "planner":
-        app = get_planner_app()
-    else:
-        print(f"Unknown agent: {args.agent}", file=sys.stderr)
-        return 1
+def create_executor_app():
+    """Create executor REST API server"""
+    agent = create_executor_agent()  # ✅ 使用 pydantic-ai
+    app = FastAPI()
+    
+    # Add CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    @app.post("/api/chat")
+    async def executor_chat_endpoint(request: Request):
+        try:
+            body = await request.json()
+            messages = body.get("messages", [])
+            user_message = ""
+            if messages:
+                for msg in reversed(messages):
+                    if msg.get("role") == "user":
+                        user_message = msg.get("content", "")
+                        break
+            if not user_message:
+                return {"response": "Error: No user message found"}
+            
+            result = await agent.run(user_message)
+            
+            # ✅ 使用 result.output
+            return {"response": str(result.output), "action": None}
+        except Exception as e:
+            print(f"Error in /api/chat: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"response": f"Error: {str(e)}"}
+    
+    @app.get("/api/tasks")
+    async def get_tasks():
+        return {"tasks": []}
+    
+    return app
 
-    import uvicorn
-    uvicorn.run(app, host=args.host, port=args.port)
-    return 0
 
+
+# def create_researcher_app():
+#     """Create researcher A2A server"""
+#     agent = create_researcher_agent()
+#     return agent.to_a2a()
+
+def create_researcher_app():
+    """Create researcher REST API server"""
+    agent = create_researcher_agent()  # ✅ 使用 pydantic-ai
+    app = FastAPI()
+    
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    
+    @app.post("/api/chat")
+    async def chat_endpoint(request: Request):
+        try:
+            body = await request.json()
+            messages = body.get("messages", [])
+            user_message = ""
+            if messages:
+                for msg in reversed(messages):
+                    if msg.get("role") == "user":
+                        user_message = msg.get("content", "")
+                        break
+            
+            if not user_message:
+                return {"response": "Error: No user message found"}
+            
+            result = await agent.run(user_message)
+            
+            # ✅ 使用 result.output
+            return {"response": str(result.output), "action": None}
+                
+        except Exception as e:
+            print(f"Error: {e}")
+            import traceback
+            traceback.print_exc()
+            return {"response": f"Error: {str(e)}"}
+    
+    @app.get("/api/tasks")
+    async def get_tasks():
+        return {"tasks": []}
+    
+    return app
+
+def create_validator_app():
+    """Create validator A2A server"""
+    agent = create_validator_agent()
+    return agent.to_a2a()
+
+
+# ============================================================================
+# CLI to run individual agents
+# ============================================================================
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    if len(sys.argv) < 3:
+        print("""
+Usage: python a2a_agents.py <agent_name> <port>
+
+Agent Names:
+  - planner   (creates execution plan)
+  - executor  (uses MCP tools)
+  - researcher (searches databases)
+  - validator (validates results)
+
+Examples:
+  python a2a_agents.py planner 8001
+  python a2a_agents.py executor 8002
+  python a2a_agents.py researcher 8003
+  python a2a_agents.py validator 8004
+""")
+        sys.exit(1)
+
+    agent_name = sys.argv[1].lower()
+    port = int(sys.argv[2])
+
+    # Create appropriate app based on agent name
+    apps = {
+        "planner": create_planner_app,
+        "executor": create_executor_app,
+        "researcher": create_researcher_app,
+        "validator": create_validator_app,
+    }
+
+    if agent_name not in apps:
+        print(f"Error: Unknown agent '{agent_name}'")
+        print(f"Available: {', '.join(apps.keys())}")
+        sys.exit(1)
+
+    app = apps[agent_name]()
+
+    # print(f"Starting {agent_name} agent on port {port}...")
+    # print(f"  Model: {MODEL_NAME}")
+    # print(f"  Host: {OLLAMA_HOST}")
+    # print(f"  API Docs: http://{a2a_host}:{port}/docs")
+
+    print(f"Starting {agent_name} agent on port {port}...")
+    print(f"  Model: {MODEL_NAME}")
+    print(f"  Host: {OLLAMA_HOST}")
+    print(f"  API Docs: http://{a2a_host}:{port}/docs")
+    print(f"  REST API endpoints:")
+    print(f"    - POST /api/chat (for executor, researcher, validator)")
+    print(f"    - POST /api/planner/chat (for planner)")
+    print(f"    - GET /api/tasks")
+
+    uvicorn.run(app, host=f"{a2a_host}", port=port, log_level="info")
