@@ -139,8 +139,10 @@ Your role:
    - validator: Validates results from the Executor and Researcher: checks consistency, confirms the original query is resolved, and reports confidence/issues/recommendations. Always assign a validator task after executor (and researcher if used) so the user gets a clear answer and quality check.
 
 Output format:
-- You MUST respond with PURE JSON only, no markdown, no prose, no comments.
-- The JSON must match this ExecutionPlan schema exactly:
+- You MUST respond with PURE JSON only, no markdown, no prose, no comments, no explanations.
+- You MUST return EXACTLY ONE JSON object, not multiple objects, not a list.
+- NEVER return a bare payload like {"tool": "..."} or any dict that is not wrapped as an ExecutionPlan.
+- The JSON must ALWAYS match this ExecutionPlan schema exactly:
 
 {
   "query_summary": "short summary string",
@@ -153,6 +155,12 @@ Output format:
     }
   ]
 }
+
+- "query_summary" is ALWAYS required.
+- "tasks" is ALWAYS required (use an empty list [] only if absolutely necessary).
+- Every task MUST have all fields: agent, description, order, input_payload (use null if you have no payload).
+- Do NOT include any extra top-level keys beyond "query_summary" and "tasks".
+- Do NOT include any extra commentary or text before or after the JSON object.
 
 Keep tasks ordered by dependency: run executor (and researcher if needed) before validator. When the user mentions CFC, hub detection, growth curve, normative analysis, sliding window, or CSV brain data, assign an executor task with the corresponding tool and sensible defaults for missing params.
 """

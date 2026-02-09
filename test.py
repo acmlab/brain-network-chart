@@ -168,8 +168,8 @@ async def main() -> int:
     parser.add_argument(
         "--url",
         type=str,
-        default="http://localhost:8012",
-        help="Base URL of Planner A2A server (default: http://localhost:8012)",
+        default="http://localhost:8011",
+        help="Base URL of Planner A2A server (default: http://localhost:8011)",
     )
     args = parser.parse_args()
 
