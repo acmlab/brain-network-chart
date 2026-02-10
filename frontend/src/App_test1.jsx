@@ -12,6 +12,14 @@ import {
 } from 'recharts';
 
 import AgentProgressPanel from './AgentProgressPanel';
+// import { useCopilotChat } from '@copilotkit/react-core'
+import {useAgent } from '@copilotkit/react-core/v2'
+// import {CopilotChat } from '@copilotkit/react-core/v2'
+// import {useCopilotChat } from '@copilotkit/react-core/v2'
+// import { useCopilotChatHeadless_c } from '@copilotkit/react-core'
+
+// import { TextMessage, MessageRole } from '@copilotkit/runtime-client-gql'
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CONSTANTS
@@ -295,7 +303,7 @@ const startResize = (e) => {
                           ? 'bg-slate-850 text-white rounded-br-md'
                           : 'bg-white text-slate-700 border border-slate-200/80 rounded-bl-md shadow-sm'
                       }`}>
-                        <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                        <p className="whitespace-pre-wrap leading-relaxed">{msg.content.trim()}</p>
                       </div>
                     </div>
                   ))
@@ -1616,61 +1624,85 @@ export default function UnifiedBrainApp() {
   const [activeView, setActiveView] = useState('home');
   const [isLoading, setIsLoading] = useState(true);
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatMessages, setChatMessages] = useState([
-    { role: 'assistant', content: 'Hi! I can help interpret your analysis results.' }
-  ]);
+  // const [chatMessages, setChatMessages] = useState([
+  //   { role: 'assistant', content: 'Hi! I can help interpret your analysis results.' }
+  // ]);
   const [chatInput, setChatInput] = useState('');
   const [selectedTask, setSelectedTask] = useState(null);
   const [selectedWindow, setSelectedWindow] = useState(0);
 
-  const [isProcessing, setIsProcessing] = useState(false);
+  // const [isProcessing, setIsProcessing] = useState(false);
+  
+  // const { agent } = useAgent();
+  // const agentMessages = agent?.messages ?? [];
 
+  // const { appendMessage, visibleMessages: chatMessages = [], isLoading: isProcessing } = useCopilotChat();
+  
+  const { agent } = useAgent({ agentId: 'root_agent' });
+const chatMessages = agent?.messages ?? [];
+const isProcessing = agent?.isRunning ?? false;
+  // const { sendMessage, messages: chatMessages = [], isLoading: isProcessing } = useCopilotChatHeadless_c();
+  
+  console.log('chatMessages:', chatMessages)
+  // console.log('agentMessages:', agentMessages)
   useEffect(() => { setTimeout(() => setIsLoading(false), 1500); }, []);
+
+  // const handleSendChat = async () => {
+  //   const content = chatInput.trim();
+  //   if (!content || isProcessing) return;
+
+  //   const nextMessages = [...chatMessages, { role: 'user', content }];
+  //   setChatMessages(nextMessages);
+  //   setChatInput('');      
+  //   setIsProcessing(true); 
+
+  //   try {
+  //     console.log("Connecting to backend: /api/planner/chat ...");
+
+  //     const res = await fetch('http://localhost:8011/api/planner/chat', {
+  //       method: 'POST', 
+  //       headers: { 'Content-Type': 'application/json' },
+  //       body: JSON.stringify({ 
+  //         query: content,
+  //         context: { 
+  //           current_view: activeView, 
+  //           task_id: selectedTask     
+  //         }
+  //       }),
+  //     });
+
+  //     if (!res.ok) {
+  //       const errorText = await res.text().catch(() => 'Unknown Server Error');
+  //       throw new Error(`Server responded with ${res.status}: ${errorText}`);
+  //     }
+
+  //     const data = await res.json();
+      
+  //     const reply = data.response || data.message || JSON.stringify(data);
+
+  //     setChatMessages(prev => [...prev, { role: 'agent', content: reply }]);
+
+  //   } catch (err) { 
+  //     console.error(err);
+  //     setChatMessages(prev => [...prev, { 
+  //       role: 'agent', 
+  //       content: `⚠️ Error: Connection Error: ${err.message}. Could not connect to Planner Agent. Please check if Port 8011 is running.` 
+  //     }]); 
+  //   } finally {
+  //     setIsProcessing(false);
+  //   }
+  // };
 
   const handleSendChat = async () => {
     const content = chatInput.trim();
     if (!content || isProcessing) return;
-
-    const nextMessages = [...chatMessages, { role: 'user', content }];
-    setChatMessages(nextMessages);
-    setChatInput('');      
-    setIsProcessing(true); 
-
-    try {
-      console.log("Connecting to backend: /api/planner/chat ...");
-
-      const res = await fetch('http://localhost:8011/api/planner/chat', {
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          query: content,
-          context: { 
-            current_view: activeView, 
-            task_id: selectedTask     
-          }
-        }),
-      });
-
-      if (!res.ok) {
-        const errorText = await res.text().catch(() => 'Unknown Server Error');
-        throw new Error(`Server responded with ${res.status}: ${errorText}`);
-      }
-
-      const data = await res.json();
-      
-      const reply = data.response || data.message || JSON.stringify(data);
-
-      setChatMessages(prev => [...prev, { role: 'agent', content: reply }]);
-
-    } catch (err) { 
-      console.error(err);
-      setChatMessages(prev => [...prev, { 
-        role: 'agent', 
-        content: `⚠️ Error: Connection Error: ${err.message}. Could not connect to Planner Agent. Please check if Port 8011 is running.` 
-      }]); 
-    } finally {
-      setIsProcessing(false);
-    }
+    setChatInput('');
+    agent.addMessage({
+      id: crypto.randomUUID(),
+      role: 'user',
+      content,
+    });
+    await agent.runAgent();
   };
 
   const getViewTitle = () => {
