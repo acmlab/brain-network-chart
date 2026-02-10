@@ -1,0 +1,31 @@
+{
+  "name": "planner_agent",
+  "displayName": "Brain Network Planner",
+  "description": "Planner agent that analyzes neuroscience queries and returns a structured ExecutionPlan JSON (assigns tasks to executor, researcher, and validator).",
+  "version": "1.0.0",
+  "capabilities": {
+    "planner": true,
+    "a2a": true
+  },
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "execution_planning",
+      "name": "Execution Planning",
+      "description": "Generate an ordered ExecutionPlan (query_summary + tasks) for brain network analysis using MCP tools.",
+      "tags": ["neuroscience", "planner", "brain-network", "mcp", "execution-plan"]
+    }
+  ],
+  "url": "http://localhost:8031/a2a/planner_agent",
+  "schema": {
+    "type": "ExecutionPlan",
+    "description": "ExecutionPlan schema: {query_summary: string, tasks: [{agent, description, order, input_payload|null}] }"
+  },
+  "examples": [
+    {
+      "input": "Analyze uploaded FC matrix for hub detection and recommend executor parameters.",
+      "output_mode": "application/json"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "name": "executor_agent",
+  "displayName": "Brain Network Executor",
+  "description": "Executor agent that runs neuroscience analysis tasks using MCP tools (e.g., CFC analysis, hub detection, normative modeling).",
+  "version": "1.0.0",
+  "capabilities": {
+    "executor": true,
+    "a2a": true
+  },
+  "defaultInputModes": ["application/json"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "task_execution",
+      "name": "Task Execution",
+      "description": "Execute neuroscience analysis tasks using MCP tools (e.g., run_cfc_wavelet_analysis, run_hub_detection).",
+      "tags": ["neuroscience", "executor", "brain-network", "mcp", "task-execution"]
+    }
+  ],
+  "url": "http://localhost:8031/a2a/executor_agent",
+  "schema": {
+    "type": "TaskExecutionResponse",
+    "description": "Task execution response schema: {task_id: string, status: string, output: any, error: string | null}"
+  },
+  "examples": [
+    {
+      "input": "Execute CFC wavelet analysis on uploaded BOLD data with parameters: beta=15, gamma=30, window_size=256",
+      "output_mode": "application/json"
+    }
+  ]
+}
