@@ -11,6 +11,8 @@ import {
   Legend,
 } from 'recharts';
 
+import AgentProgressPanel from './AgentProgressPanel';
+
 /* ═══════════════════════════════════════════════════════════════════════════
    CONSTANTS
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -165,6 +167,38 @@ const getHeatColor = (t) => {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const FloatingLLMChat = ({ isOpen, onToggle, messages, input, onInputChange, onSend }) => {
+  
+  const [dimensions, setDimensions] = useState({ width: 380, height: 600 });
+  
+const startResize = (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startWidth = dimensions.width;
+    const startHeight = dimensions.height;
+
+    const doDrag = (dragEvent) => {
+      const newWidth = startWidth + (startX - dragEvent.clientX);
+      const newHeight = startHeight + (startY - dragEvent.clientY);
+
+      setDimensions({
+        width: Math.max(320, Math.min(newWidth, 800)),
+        height: Math.max(500, Math.min(newHeight, 900))
+      });
+    };
+
+    const stopDrag = () => {
+      document.removeEventListener('mousemove', doDrag);
+      document.removeEventListener('mouseup', stopDrag);
+      document.body.style.cursor = 'default';
+    };
+
+    document.addEventListener('mousemove', doDrag);
+    document.addEventListener('mouseup', stopDrag);
+    document.body.style.cursor = 'nw-resize';
+  };
+  const [activeTab, setActiveTab] = useState('chat');
+  
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); }
   };
@@ -190,46 +224,91 @@ const FloatingLLMChat = ({ isOpen, onToggle, messages, input, onInputChange, onS
       </button>
 
       {isOpen && (
-        <div className="fixed bottom-24 right-6 w-[380px] h-[520px] bg-white rounded-2xl shadow-panel border border-slate-200/80 flex flex-col z-50 animate-slide-up overflow-hidden">
-          <div className="flex-shrink-0 bg-slate-850 text-white px-4 py-3 flex items-center justify-between">
-            <h3 className="font-semibold text-sm flex items-center gap-2">
-              <span className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+        <div 
+          className="fixed bottom-24 right-6 bg-white rounded-2xl shadow-panel border border-slate-200/80 flex flex-col z-50 overflow-hidden"
+          style={{ width: dimensions.width, height: dimensions.height }}
+        >
+          <div
+            onMouseDown={startResize}
+            className="absolute top-0 left-0 w-6 h-6 cursor-nw-resize z-50 group flex items-start justify-start p-1"
+            title="Drag to resize"
+          >
+            {/* Visual indicator (corner mark) */}
+            <div className="w-2.5 h-2.5 border-t-2 border-l-2 border-slate-300 group-hover:border-slate-500 rounded-tl-md transition-colors" />
+          </div>
+          {/* === END INSERT === */}
+
+          <div className="flex-shrink-0 bg-slate-850 text-white px-4 py-3">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-sm flex items-center gap-2">
+                <span className="w-8 h-8 rounded-lg bg-white/15 flex items-center justify-center">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                </span>
+                AI Assistant
+              </h3>
+              <button onClick={onToggle} className="text-slate-300 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
-              </span>
-              AI Assistant
-            </h3>
-            <button onClick={onToggle} className="text-slate-300 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
+              </button>
+            </div>
+
+            <div className="flex p-1 bg-slate-700/50 rounded-lg">
+              <button 
+                onClick={() => setActiveTab('chat')}
+                className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
+                  activeTab === 'chat' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                Chat
+              </button>
+              <button 
+                onClick={() => setActiveTab('workflow')}
+                className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-all ${
+                  activeTab === 'workflow' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                Workflow
+              </button>
+            </div>
           </div>
 
-          <div className="flex-1 overflow-auto p-4 space-y-3 bg-slate-50/50">
-            {messages.length === 0 ? (
-              <div className="text-center text-slate-400 py-12">
-                <div className="w-12 h-12 rounded-xl bg-slate-200/60 flex items-center justify-center mx-auto mb-3">
-                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                  </svg>
-                </div>
-                <p className="text-sm">Start a conversation…</p>
-              </div>
-            ) : (
-              messages.map((msg, idx) => (
-                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] px-3.5 py-2.5 rounded-2xl text-sm ${
-                    msg.role === 'user'
-                      ? 'bg-slate-850 text-white rounded-br-md'
-                      : 'bg-white text-slate-700 border border-slate-200/80 rounded-bl-md shadow-sm'
-                  }`}>
-                    <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+          <div className="flex-1 overflow-hidden relative bg-slate-50/50">
+            
+            {activeTab === 'chat' && (
+              <div className="h-full overflow-auto p-4 space-y-3">
+                {/* PASTE YOUR ORIGINAL MESSAGE MAPPING LOGIC HERE */}
+                {messages.length === 0 ? (
+                  /* ... original empty state ... */
+                  <div className="text-center text-slate-400 py-12">
+                     {/* ... svg and text ... */}
+                     <p className="text-sm">Start a conversation...</p>
                   </div>
-                </div>
-              ))
+                ) : (
+                  messages.map((msg, idx) => (
+                    /* ... original message item ... */
+                    <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[85%] px-3.5 py-2.5 rounded-2xl text-sm ${
+                        msg.role === 'user'
+                          ? 'bg-slate-850 text-white rounded-br-md'
+                          : 'bg-white text-slate-700 border border-slate-200/80 rounded-bl-md shadow-sm'
+                      }`}>
+                        <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             )}
+
+            {activeTab === 'workflow' && (
+              <div className="h-full overflow-hidden bg-white">
+                <AgentProgressPanel />
+              </div>
+            )}
+            
           </div>
 
           <div className="flex-shrink-0 p-4 border-t border-slate-200 bg-white">

@@ -102,48 +102,54 @@ confidence (0-100%), issues, and recommendations."""
 #     agent = create_planner_agent()
 #     return agent.to_a2a()
 
-def create_planner_app():
-    """Create planner REST API server"""
-    agent = create_planner_agent()  # ✅ 使用 pydantic-ai
-    app = FastAPI()
+# def create_planner_app():
+#     """Create planner REST API server"""
+#     agent = create_planner_agent()  
+#     app = FastAPI()
     
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+#     app.add_middleware(
+#         CORSMiddleware,
+#         allow_origins=["*"],
+#         allow_credentials=True,
+#         allow_methods=["*"],
+#         allow_headers=["*"],
+#     )
     
-    @app.post("/api/planner/chat")
-    async def planner_chat_endpoint(request: Request):
-        try:
-            body = await request.json()
-            query = body.get("query", "")
-            print(f"[DEBUG] Received query: {query}")
+#     @app.post("/api/planner/chat")
+#     async def planner_chat_endpoint(request: Request):
+#         try:
+#             body = await request.json()
+#             query = body.get("query", "")
+#             print(f"[DEBUG] Received query: {query}")
             
-            if not query:
-                return {"response": "Error: No query provided"}
+#             if not query:
+#                 return {"response": "Error: No query provided"}
             
-            print(f"[DEBUG] Calling pydantic-ai agent...")
-            result = await agent.run(query)
+#             print(f"[DEBUG] Calling pydantic-ai agent...")
+#             result = await agent.run(query)
             
-            # ✅ 使用 result.output
-            reply = str(result.output)
-            print(f"[DEBUG] Got response: {reply[:100]}...")
+
+#             reply = str(result.output)
+#             print(f"[DEBUG] Got response: {reply[:100]}...")
             
-            return {"response": reply, "message": reply}
+#             return {"response": reply, "message": reply}
                 
-        except Exception as e:
-            print(f"[ERROR] Exception: {e}")
-            import traceback
-            traceback.print_exc()
-            return {"response": f"Error: {str(e)}"}
+#         except Exception as e:
+#             print(f"[ERROR] Exception: {e}")
+#             import traceback
+#             traceback.print_exc()
+#             return {"response": f"Error: {str(e)}"}
     
-    @app.get("/api/tasks")
-    async def get_tasks():
-        return {"tasks": []}
+#     @app.get("/api/tasks")
+#     async def get_tasks():
+#         return {"tasks": []}
     
+#     return app
+
+def create_planner_app():
+    """Create planner AG-UI server"""
+    agent = create_planner_agent()
+    app = agent.to_ag_ui()
     return app
 
 
@@ -155,7 +161,7 @@ def create_planner_app():
 
 def create_executor_app():
     """Create executor REST API server"""
-    agent = create_executor_agent()  # ✅ 使用 pydantic-ai
+    agent = create_executor_agent()  
     app = FastAPI()
     
     # Add CORS middleware
@@ -206,7 +212,7 @@ def create_executor_app():
 
 def create_researcher_app():
     """Create researcher REST API server"""
-    agent = create_researcher_agent()  # ✅ 使用 pydantic-ai
+    agent = create_researcher_agent()  
     app = FastAPI()
     
     app.add_middleware(
@@ -234,7 +240,7 @@ def create_researcher_app():
             
             result = await agent.run(user_message)
             
-            # ✅ 使用 result.output
+
             return {"response": str(result.output), "action": None}
                 
         except Exception as e:
