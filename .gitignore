@@ -2,3 +2,5 @@
 __pycache__/
 *.log
 .vscode/
+frontend/node_modules
+node_modules
