@@ -38,6 +38,64 @@ def create_mcp_server():
         All results are returned as a single TextContent block containing JSON.
         """
         try:
+            # Validate parameters for known tools
+            def _validate_cfc_params(args: dict[str, Any]):
+                # Expected types and ranges (mirror mcp_server.py rules)
+                if 'window_size' in args:
+                    ws = int(args['window_size'])
+                    if ws < 10 or ws > 1000:
+                        raise ValueError('window_size must be between 10 and 1000')
+                if 'step_size' in args:
+                    ss = int(args['step_size'])
+                    if ss < 30 or ss > 500:
+                        raise ValueError('step_size must be between 30 and 500')
+                if 'ratio' in args:
+                    r = float(args['ratio'])
+                    if r < 0.0 or r > 1.0:
+                        raise ValueError('ratio must be between 0.0 and 1.0')
+                if 'wavelets_num' in args:
+                    wn = int(args['wavelets_num'])
+                    if wn < 1 or wn > 100:
+                        raise ValueError('wavelets_num must be between 1 and 100')
+                if 'max_iter' in args:
+                    mi = int(args['max_iter'])
+                    if mi < 1 or mi > 1000:
+                        raise ValueError('max_iter must be between 1 and 1000')
+                if 'step_size' in args and 'window_size' in args:
+                    if int(args['step_size']) > int(args['window_size']):
+                        raise ValueError('step_size must be <= window_size')
+
+            def _validate_hub_params(args: dict[str, Any]):
+                if 'window_size' in args:
+                    ws = int(args['window_size'])
+                    if ws < 10 or ws > 1000:
+                        raise ValueError('window_size must be between 10 and 1000')
+                if 'step_size' in args:
+                    ss = int(args['step_size'])
+                    if ss < 1 or ss > 500:
+                        raise ValueError('step_size must be between 1 and 500')
+                if 'ratio' in args:
+                    r = float(args['ratio'])
+                    if r < 0.0 or r > 1.0:
+                        raise ValueError('ratio must be between 0.0 and 1.0')
+                if 'k' in args:
+                    k = int(args['k'])
+                    if k < 1 or k > 100:
+                        raise ValueError('k must be between 1 and 100')
+                if 'hub_num' in args:
+                    hn = int(args['hub_num'])
+                    if hn < 1:
+                        raise ValueError('hub_num must be >= 1')
+                if 'step_size' in args and 'window_size' in args:
+                    if int(args['step_size']) > int(args['window_size']):
+                        raise ValueError('step_size must be <= window_size')
+
+            def _validate_normative_params(args: dict[str, Any]):
+                required = ('x_phenotype', 'y_path', 'age_col', 'val_col')
+                for r in required:
+                    if r not in args or not args.get(r):
+                        raise ValueError(f"{r} is required for normative analysis")
+
             if name == "run_cfc_wavelet_analysis":
                 # Map arguments and call the blocking function in a thread
                 params = {
@@ -56,6 +114,8 @@ def create_mcp_server():
                     )
                     if k in arguments
                 }
+                # Validate parameters according to rules
+                _validate_cfc_params(params)
                 result = await anyio.to_thread.run_sync(lambda: run_cfc_wavelet_analysis(**params))
                 return [types.TextContent(type="text", text=json.dumps(result))]
 
@@ -74,6 +134,7 @@ def create_mcp_server():
                     )
                     if k in arguments
                 }
+                _validate_hub_params(params)
                 result = await anyio.to_thread.run_sync(lambda: run_hub_detection(**params))
                 return [types.TextContent(type="text", text=json.dumps(result))]
 
@@ -88,6 +149,7 @@ def create_mcp_server():
                     for k in ("x_phenotype", "y_path", "age_col", "val_col")
                     if k in arguments
                 }
+                _validate_normative_params(params)
                 result = await anyio.to_thread.run_sync(lambda: run_normative_analysis(**params))
                 return [types.TextContent(type="text", text=json.dumps(result))]
 
@@ -141,17 +203,18 @@ def create_mcp_server():
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "data_path": {"type": "string"},
-                        "window_size": {"type": "integer"},
-                        "step_size": {"type": "integer"},
+                        "data_path": {"type": "string", "description": "Path or uploaded reference (e.g., uploaded_bold)"},
+                        "window_size": {"type": "integer", "minimum": 10, "maximum": 1000},
+                        "step_size": {"type": "integer", "minimum": 30, "maximum": 500},
                         "padding": {"type": "boolean"},
-                        "ratio": {"type": "number"},
-                        "wavelets_num": {"type": "integer"},
+                        "ratio": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                        "wavelets_num": {"type": "integer", "minimum": 1, "maximum": 100},
                         "beta": {"type": "number"},
                         "gamma": {"type": "number"},
-                        "max_iter": {"type": "integer"},
-                        "node_select": {"type": "integer"},
+                        "max_iter": {"type": "integer", "minimum": 1, "maximum": 1000},
+                        "node_select": {"type": "integer", "minimum": 1},
                     },
+                    "required": ["data_path"],
                 },
             ),
             types.Tool(
@@ -160,15 +223,16 @@ def create_mcp_server():
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "data_path": {"type": "string"},
-                        "window_size": {"type": "integer"},
-                        "step_size": {"type": "integer"},
+                        "data_path": {"type": "string", "description": "Path or uploaded reference"},
+                        "window_size": {"type": "integer", "minimum": 10, "maximum": 1000},
+                        "step_size": {"type": "integer", "minimum": 1, "maximum": 500},
                         "padding": {"type": "boolean"},
-                        "ratio": {"type": "number"},
-                        "k": {"type": "integer"},
-                        "hub_num": {"type": "integer"},
+                        "ratio": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                        "k": {"type": "integer", "minimum": 1, "maximum": 100},
+                        "hub_num": {"type": "integer", "minimum": 1},
                         "use_group": {"type": "boolean"},
                     },
+                    "required": ["data_path"],
                 },
             ),
             types.Tool(
@@ -176,7 +240,7 @@ def create_mcp_server():
                 description="Load growth curve data for a phenotype",
                 inputSchema={
                     "type": "object",
-                    "properties": {"phenotype": {"type": "string"}},
+                    "properties": {"phenotype": {"type": "string", "description": "Phenotype name (e.g., 'Global mean of FC')"}},
                     "required": ["phenotype"],
                 },
             ),
@@ -186,10 +250,10 @@ def create_mcp_server():
                 inputSchema={
                     "type": "object",
                     "properties": {
-                        "x_phenotype": {"type": "string"},
-                        "y_path": {"type": "string"},
-                        "age_col": {"type": "string"},
-                        "val_col": {"type": "string"},
+                        "x_phenotype": {"type": "string", "description": "Phenotype name"},
+                        "y_path": {"type": "string", "description": "Path or uploaded reference to overlay CSV"},
+                        "age_col": {"type": "string", "description": "Column name for age"},
+                        "val_col": {"type": "string", "description": "Column name for metric values"},
                     },
                     "required": ["x_phenotype", "y_path", "age_col", "val_col"],
                 },
