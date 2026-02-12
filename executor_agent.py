@@ -1,68 +1,3 @@
-"""
-executor_agent.py  –  v3.2.0
-Orchestrates neuroimaging analysis and medical research.
-
-Architecture – Two-Track MCP Communication
-───────────────────────────────────────────
-The backend is TWO servers sharing the same port (8010):
-
-  Track A – Plain REST  (mcp_server.py custom_route endpoints)
-  ─────────────────────────────────────────────────────────────
-  Used for: run_cfc_wavelet_analysis, run_hub_detection,
-            run_normative_analysis, get_growth_curve,
-            internet_search, search_pubmed, openalex_search,
-            crossref_enrich, openneuro_search,
-            upload, list_files, delete_file
-
-  These are registered with @server.custom_route() and are
-  reachable as plain POST/GET/DELETE calls:
-      POST http://localhost:8010/internet_search
-      POST http://localhost:8010/run_cfc_wavelet_analysis
-      ... etc.
-
-  Track B – MCP ADK Streamable-HTTP / JSON-RPC 2.0
-  ─────────────────────────────────────────────────
-  Used for: run_correlation, run_group_comparison,
-            apply_fdr_correction, detect_outliers,
-            check_data_normality
-
-  These are registered with @server.tool() only — they have
-  NO REST routes.  They are only reachable through the MCP
-  wire protocol at POST http://localhost:8010/mcp.
-
-  The MCP Streamable-HTTP transport uses session IDs even with
-  stateless=True.  The correct sequence is:
-    1. POST /mcp  with method="initialize"  → server returns
-       a Mcp-Session-Id response header.
-    2. POST /mcp  with the same Mcp-Session-Id header and
-       method="tools/call".
-
-  _call_mcp_stats_tool() implements this full handshake,
-  acquiring a fresh session per call (stateless mode means the
-  server does not store state between requests, but still
-  requires the header to be present for routing).
-
-Root cause of the v3.0.0 "Missing session ID" 400 error
-─────────────────────────────────────────────────────────
-v3.0.0 sent ALL tool calls (including REST-only endpoints like
-/internet_search) through the JSON-RPC path without first
-running the initialize handshake.  The fix has two parts:
-  1. Route Track A tools back to plain REST.
-  2. Add the initialize → call_tool two-step for Track B tools.
-
-Changelog from v3.1.0
-──────────────────────
-• Fixed LLM 405 error: LLM_URL is validated at startup and the
-  /api/generate path is appended automatically if missing.
-  A 405 or ConnectError now emits a clear actionable message
-  naming the exact URL that failed.
-• Added LLM_CLINICAL_MODEL env var to override MedGemma at runtime.
-• Fixed hardcoded LLM prompt: now queries against the actual user
-  query instead of always summarising "BOLD connectivity".
-• Added relevance filtering on internet_search results: off-topic
-  papers with zero query-word overlap are dropped before LLM
-  analysis. Raw count is preserved in metadata.raw_source_count.
-"""
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.responses import JSONResponse
@@ -78,29 +13,21 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 # LOGGING
-# ──────────────────────────────────────────────────────────────────────────────
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 # CONFIGURATION
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 
-MCP_URL         = os.getenv("MCP_URL",           "http://localhost:8010")
+MCP_URL = os.getenv("MCP_URL", "http://localhost:8010")
 
 # LLM configuration
-# ─────────────────────────────────────────────────────────────────────────────
-# LLM_URL must point to an Ollama-compatible /api/generate endpoint.
-# The 405 "Method Not Allowed" seen in v3.1.0 testing was caused by the
-# LLM_URL env var being set to a non-Ollama placeholder (http://localhost:12345).
-# Ensure the env var is either unset (falls back to 11434) or points to a
-# live Ollama instance.  The /api/generate path is appended automatically if
-# the URL does not already contain it, so you can set LLM_URL to either:
-#   http://localhost:11434            ← base URL (path appended here)
-#   http://localhost:11434/api/generate  ← full URL (used as-is)
+#   http://localhost:11434            ← base URL 
+#   http://localhost:11434/api/generate  ← full URL 
 _llm_base = os.getenv("LLM_URL", "http://localhost:11434/api/generate").rstrip("/")
 LLM_URL = _llm_base if "/api/" in _llm_base else f"{_llm_base}/api/generate"
 
@@ -125,19 +52,12 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 UPLOAD_DIR = Path("/tmp/executor_uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 # MODEL SELECTION
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 
 def select_model(task: str) -> str:
-    """
-    Intelligent model selection per Kaggle HAI-DEF requirements.
-    Model zoo: https://developers.google.com/health-ai-developer-foundations
-
-    The LLM_CLINICAL_MODEL env var overrides the clinical_analysis and
-    research models at runtime — useful for swapping in a locally-pulled
-    model (e.g. LLM_CLINICAL_MODEL=gemma3:12b) without editing this file.
-    """
+   
     model_map = {
         "planning":          "qwen3:latest",
         "clinical_analysis": "MedAIBase/MedGemma1.5:4b",
@@ -153,9 +73,9 @@ def select_model(task: str) -> str:
     logger.info(f"Model selected for '{task}': {selected}")
     return selected
 
-# ──────────────────────────────────────────────────────────────────────────────
-# A2A PROTOCOL MODELS  (preserved — Planner / Validator compatibility)
-# ──────────────────────────────────────────────────────────────────────────────
+ 
+# A2A PROTOCOL MODELS  
+ 
 
 class AgentCard(BaseModel):
     """A2A Agent Card — Identifies agent capabilities"""
@@ -269,9 +189,9 @@ class A2AResponse(BaseModel):
     error:   Optional[Dict[str, Any]] = None
     id:      Optional[str]            = None
 
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 # PYDANTIC REQUEST / RESPONSE MODELS
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 
 class ResearchRequest(BaseModel):
     """Request schema for research execution via internet_search"""
@@ -341,9 +261,9 @@ class SuccessResponse(BaseModel):
     agent_id: str = "executor_agent"
     port:     int = EXECUTOR_PORT
 
-# ──────────────────────────────────────────────────────────────────────────────
-# A2A CLIENT  (unchanged from v2.1.0)
-# ──────────────────────────────────────────────────────────────────────────────
+ 
+# A2A CLIENT  (
+ 
 
 class A2AClient:
     """Lightweight A2A client for calling other agents"""
@@ -385,9 +305,9 @@ class A2AClient:
             logger.error(f"A2A connection failed to {self.agent_name}: {e}")
             raise RuntimeError(f"Failed to communicate with {self.agent_name}: {e}")
 
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 # HTTP CLIENT MANAGER
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 
 class HTTPClientManager:
     """Manages a single httpx.AsyncClient across the app lifecycle"""
@@ -429,9 +349,9 @@ async def lifespan(app: FastAPI):
     await HTTPClientManager.stop()
     logger.info("Executor Agent shutdown complete")
 
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 # FASTAPI APPLICATION
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 
 app = FastAPI(
     title="Executor Agent – UNC ACM Lab (A2A / Two-Track MCP)",
@@ -443,9 +363,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 # UTILITY FUNCTIONS
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 
 def safe_dataframe_to_markdown(
     data: Any, default_message: str = "No data available"
@@ -478,9 +398,9 @@ def create_error_response(
         error_type=error_type, error_message=message, failed_component=component
     )
 
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 # TRACK A — PLAIN REST HELPER
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 
 async def _call_rest_endpoint(
     path: str,
@@ -541,9 +461,9 @@ async def _call_rest_endpoint(
     logger.info(f"REST POST ← {path}  OK")
     return result
 
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 # TRACK B — MCP ADK JSON-RPC HELPER  (stats tools only)
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 
 async def _call_mcp_stats_tool(
     tool_name: str,
@@ -592,7 +512,7 @@ async def _call_mcp_stats_tool(
     if not client:
         raise RuntimeError("HTTP client not initialised")
 
-    # ── Step 1: initialize ───────────────────────────────────────────────────
+    # Step 1: initialize 
     init_id = f"init_{tool_name}_{datetime.now().timestamp()}"
     init_body = {
         "jsonrpc": "2.0",
@@ -647,7 +567,7 @@ async def _call_mcp_stats_tool(
 
     logger.info(f"MCP session acquired: {session_id[:12]}… for tool '{tool_name}'")
 
-    # ── Step 2: tools/call ───────────────────────────────────────────────────
+    # ── Step 2: tools/call
     call_id   = f"call_{tool_name}_{datetime.now().timestamp()}"
     call_body = {
         "jsonrpc": "2.0",
@@ -712,9 +632,9 @@ async def _call_mcp_stats_tool(
     logger.info(f"MCP tools/call ← {tool_name}  OK")
     return result
 
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 # A2A PROTOCOL ENDPOINTS  (preserved)
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 
 @app.get("/agent-card")
 async def get_agent_card():
@@ -759,9 +679,9 @@ async def a2a_invoke(request: Request):
             id=message.id if message else None,
         ).dict()
 
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 # FILE LIFECYCLE ENDPOINTS
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
@@ -877,9 +797,9 @@ async def list_files():
         logger.error(f"List files failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 # INTERNAL TASK HANDLERS  (A2A router delegates here)
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 
 async def _handle_execute_research(params: Dict[str, Any]) -> Dict[str, Any]:
     query = params.get("query")
@@ -917,9 +837,9 @@ async def _handle_group_comparison(params: Dict[str, Any]) -> Dict[str, Any]:
 async def _handle_fdr_correction(params: Dict[str, Any]) -> Dict[str, Any]:
     return await _fdr_correction_logic(FDRCorrectionRequest(**params))
 
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 # CORE BUSINESS LOGIC
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 
 async def _execute_research_logic(request: ResearchRequest) -> Dict[str, Any]:
     """
@@ -930,7 +850,7 @@ async def _execute_research_logic(request: ResearchRequest) -> Dict[str, Any]:
       4. Validator Agent  → A2A (optional)
     """
     try:
-        # ── Step 1: Broad scholarly search (Track A) ─────────────────────────
+        # ── Step 1: Broad scholarly search (Track A) 
         logger.info(f"internet_search query: {request.query}")
         search_result = await _call_rest_endpoint(
             "/internet_search",
@@ -966,7 +886,7 @@ async def _execute_research_logic(request: ResearchRequest) -> Dict[str, Any]:
                 },
             }
 
-        # ── Step 2: Filter and build evidence representations ────────────────
+        # Step 2: Filter and build evidence representations 
         # Discard results where the title has zero word overlap with the query.
         # This removes the clearly off-topic papers (e.g. ADAM10 synapse
         # function appearing in Alzheimer's BOLD queries) that slip through
@@ -1009,7 +929,7 @@ async def _execute_research_logic(request: ResearchRequest) -> Dict[str, Any]:
             for r in relevant[:5]
         )
 
-        # ── Step 3: Clinical analysis via MedGemma ───────────────────────────
+        # Step 3: Clinical analysis via MedGemma 
         prompt = (
             f"<start_of_turn>user\n"
             f"You are a neuroscience research assistant. "
@@ -1065,7 +985,7 @@ async def _execute_research_logic(request: ResearchRequest) -> Dict[str, Any]:
             logger.warning(f"LLM call failed: {e}")
             llm_analysis = f"[LLM unavailable: {e}]"
 
-        # ── Step 4: Researcher Agent (A2A, optional) ─────────────────────────
+        # Step 4: Researcher Agent (A2A, optional)
         try:
             researcher_result = await HTTPClientManager.researcher_client.call_task(
                 method="research_query",
@@ -1082,7 +1002,7 @@ async def _execute_research_logic(request: ResearchRequest) -> Dict[str, Any]:
             refined_keywords    = []
             researcher_analysis = ""
 
-        # ── Step 5: Assemble payload ─────────────────────────────────────────
+        # Step 5: Assemble payload 
         payload = {
             "status":   "success",
             "agent_id": "executor_agent",
@@ -1103,7 +1023,7 @@ async def _execute_research_logic(request: ResearchRequest) -> Dict[str, Any]:
             },
         }
 
-        # ── Step 6: Validator Agent (A2A, optional) ──────────────────────────
+        # Step 6: Validator Agent (A2A, optional)
         try:
             validation_result = await HTTPClientManager.validator_client.call_task(
                 method="validate",
@@ -1150,7 +1070,7 @@ async def _analyze_traits_logic(request: TraitAnalysisRequest) -> Dict[str, Any]
         rest_path = rest_path_map[request.analysis_type]
         logger.info(f"Trait analysis: {request.analysis_type} → {rest_path}")
 
-        # ── Step 1: Primary analysis (Track A) ───────────────────────────────
+        # Step 1: Primary analysis (Track A)
         try:
             if request.analysis_type in ("chart", "normative"):
                 api_payload = {"y_path": request.file_name, **normative_defaults}
@@ -1175,12 +1095,12 @@ async def _analyze_traits_logic(request: TraitAnalysisRequest) -> Dict[str, Any]
                 }
             raise
 
-        # ── Step 2: Render Markdown table ────────────────────────────────────
+        # Step 2: Render Markdown table
         trait_table = safe_dataframe_to_markdown(
             data, f"No trait data returned from {request.analysis_type} analysis"
         )
 
-        # ── Step 3: Statistical validation (Track B) ─────────────────────────
+        #  Step 3: Statistical validation (Track B)
         # Infer a representative numeric column from the result payload.
         inferred_column: Optional[str] = None
         try:
@@ -1344,9 +1264,9 @@ async def _fdr_correction_logic(
         logger.error(f"FDR correction error: {e}")
         raise
 
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 # REST ENDPOINTS
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 
 @app.get("/")
 async def root():
@@ -1440,9 +1360,9 @@ async def apply_fdr_correction(request: FDRCorrectionRequest) -> Dict[str, Any]:
         logger.error(f"FDR correction failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 # MAIN ENTRY POINT
-# ──────────────────────────────────────────────────────────────────────────────
+ 
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=EXECUTOR_PORT, log_level="info")
