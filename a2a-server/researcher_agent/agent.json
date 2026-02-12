@@ -1,0 +1,32 @@
+{
+  "name": "researcher_agent",
+  "displayName": "Brain Network Researcher",
+  "description": "Researcher agent for evidence search and statistics.",
+  "version": "1.0.0",
+  "capabilities": {
+    "planner": true,
+    "a2a": true
+  },
+  "defaultInputModes": ["text/plain"],
+  "defaultOutputModes": ["application/json"],
+  "skills": [
+    {
+      "id": "researcher_agent",
+      "name": "evidence search and statistics",
+      "description": "handle_keywords handle_evidence summarize_citations handle_statistics",
+      "tags": ["neuroscience", "researcher", "statistics", "keyword extraction", "summerize"]
+    }
+  ],
+  "url": "http://localhost:8013/a2a/researcher_agent",
+  "schema": {
+    "type": "ResultPayload",
+    "description": "ResultPayload schema: {task_id: string, status: string, result: json, logs: string | null}"
+  },
+  "examples": [
+    {
+      "input": "{\"task_id\":\"st-001\",\"sender\":\"executor\",\"intent\":\"STATS\",\"payload\":{\"outcome_column\":\"outcome\",\"table\":[{\"subject\":\"S1\",\"connectivity\":0.42,\"age\":62,\"outcome\":1},{\"subject\":\"S2\",\"connectivity\":0.35,\"age\":59,\"outcome\":0},{\"subject\":\"S3\",\"connectivity\":0.51,\"age\":65,\"outcome\":1},{\"subject\":\"S4\",\"connectivity\":0.28,\"age\":57,\"outcome\":0}]}}",
+      "output_mode": "application/json",
+      "output": "{\"task_id\":\"st-001\",\"status\":\"ok\",\"result\":{\"keywords\":[],\"literature_summary\":[],\"citations\":[],\"stats_recommendation\":{\"methods\":{\"correlation\":[\"pearson\",\"spearman\"],\"regression\":\"logistic\"},\"assumptions\":{\"correlation\":\"checklinearityandoutliers\",\"regression\":\"checkresidualsandmulticollinearity\"},\"multiple_comparisons\":\"fdr_bh\",\"covariates\":[]},\"config_update_suggestion\":{\"should_update\":false,\"updates\":[]},\"confidence\":0.65,\"stats_output\":{},\"stats_tool_results\":{}},\"logs\":[\"stats_skipped=true\"]}"
+    }
+  ]
+}

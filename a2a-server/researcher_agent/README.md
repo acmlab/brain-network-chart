@@ -2,6 +2,16 @@
 
 Production-ready A2A server for evidence search and statistics on `localhost:8013`.
 
+## For ADK compatible
+
+Start remote ADK a2a agent 
+`cd ..`
+`adk api_server --a2a --port 8013`
+
+Test ADK agent
+`cd ..`
+`adk web`
+
 ## Setup
 
 ```bash
