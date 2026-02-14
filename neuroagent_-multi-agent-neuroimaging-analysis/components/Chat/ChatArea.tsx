@@ -1,7 +1,8 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import { ChatMessage, AgentType } from '../../types';
+import { WorkflowState } from '../../workflowTypes';
 import MessageBubble from './MessageBubble';
+import ThinkingOverlay from '../AgentProgress/ThinkingOverlay';
 import { Send, Upload, PlayCircle } from 'lucide-react';
 
 interface ChatAreaProps {
@@ -13,10 +14,11 @@ interface ChatAreaProps {
   hasData: boolean;
   highlightedMessageId: string | null;
   onRestartStep: (messageId: string, newParams: any) => void;
+  workflow: WorkflowState;
 }
 
 const ChatArea: React.FC<ChatAreaProps> = ({ 
-  messages, onSendMessage, onFileUpload, onLoadDemo, isProcessing, hasData, highlightedMessageId, onRestartStep 
+  messages, onSendMessage, onFileUpload, onLoadDemo, isProcessing, hasData, highlightedMessageId, onRestartStep, workflow
 }) => {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -54,7 +56,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-900 border-l border-slate-800">
+    <div className="flex flex-col h-full bg-slate-900 border-l border-slate-800 relative">
       <div className="flex-none p-4 border-b border-slate-800 bg-slate-900/50 backdrop-blur">
         <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
@@ -73,11 +75,10 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             />
           </div>
         ))}
-        {isProcessing && (
-           <div className="flex justify-start animate-pulse ml-2">
-             <span className="text-xs text-slate-500 bg-slate-800 px-3 py-1 rounded-full">Agents are working...</span>
-           </div>
-        )}
+
+        {/* Thinking overlay bar — appears after the last message */}
+        <ThinkingOverlay workflow={workflow} isProcessing={isProcessing} />
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -102,7 +103,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           </div>
         ) : null}
         
-        <form onSubmit={handleSubmit} className="relative">
+        <div className="relative">
           <input
             type="text"
             value={input}
@@ -110,15 +111,21 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             disabled={isProcessing}
             placeholder={hasData ? "Ask about the data (e.g., 'Correlation between Amyloid and Age?')" : "Upload data first..."}
             className="w-full bg-slate-800 text-slate-200 rounded-lg pl-4 pr-12 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 border border-slate-700 disabled:opacity-50 placeholder-slate-500"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                handleSubmit(e);
+              }
+            }}
           />
           <button
-            type="submit"
+            type="button"
+            onClick={handleSubmit}
             disabled={!input.trim() || isProcessing}
             className="absolute right-2 top-2 p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md disabled:opacity-50 disabled:hover:bg-indigo-600 transition-colors"
           >
             <Send className="w-4 h-4" />
           </button>
-        </form>
+        </div>
         <input 
           type="file" 
           ref={fileInputRef} 
