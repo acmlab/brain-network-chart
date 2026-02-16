@@ -1,146 +1,33 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import {
   WorkflowState,
   WorkflowPhase,
-  AgentStatus,
   createInitialWorkflow,
-  createInitialAgents,
-  PHASE_PROGRESS,
+  PHASE_BASE_PROGRESS,
 } from '../workflowTypes';
 
-// Helper: update a single agent inside the workflow
-function updateAgent(
-  state: WorkflowState,
-  agentId: string,
-  patch: Partial<AgentStatus>
-): WorkflowState {
-  return {
-    ...state,
-    agents: state.agents.map((a) =>
-      a.id === agentId ? { ...a, ...patch } : a
-    ),
-  };
-}
-
-/**
- * useWorkflow — manages the WorkflowState that drives AgentProgressPanel.
- *
- * Returns:
- *  - workflowState: current state (pass to <AgentProgressPanel workflow={workflowState} />)
- *  - wf: object with imperative methods to call from handleUserQuery / executePlanSteps
- */
 export function useWorkflow() {
   const [workflowState, setWorkflowState] = useState<WorkflowState>(
     createInitialWorkflow()
   );
 
-  // Use ref so async callbacks always read the latest state
-  const stateRef = useRef(workflowState);
   const update = useCallback((fn: (prev: WorkflowState) => WorkflowState) => {
-    setWorkflowState((prev) => {
-      const next = fn(prev);
-      stateRef.current = next;
-      return next;
-    });
+    setWorkflowState((prev) => fn(prev));
   }, []);
 
-  // ── Public API ──────────────────────────────────────────────────────────
-
-  /** Reset everything for a new query */
   const startNewQuery = useCallback(
-    (query: string) => {
+    (query: string, currentMessageCount: number) => {
       update(() => ({
+        ...createInitialWorkflow(),
         query,
-        agents: createInitialAgents(),
         phase: 'classifying' as WorkflowPhase,
-        overallProgress: PHASE_PROGRESS.classifying,
+        overallProgress: PHASE_BASE_PROGRESS.classifying,
+        queryStartIndex: currentMessageCount,
       }));
     },
     [update]
   );
 
-  /** Mark an agent as running */
-  const agentStart = useCallback(
-    (agentId: string, currentStep: string, model?: string) => {
-      update((s) => {
-        let patched = updateAgent(s, agentId, {
-          status: 'running',
-          currentStep,
-          startTime: Date.now(),
-          endTime: null,
-          error: null,
-          ...(model ? { model } : {}),
-        });
-        return patched;
-      });
-    },
-    [update]
-  );
-
-  /** Append a log message to an agent */
-  const agentLog = useCallback(
-    (agentId: string, message: string) => {
-      update((s) => {
-        const agent = s.agents.find((a) => a.id === agentId);
-        if (!agent) return s;
-        return updateAgent(s, agentId, {
-          messages: [...agent.messages, message],
-        });
-      });
-    },
-    [update]
-  );
-
-  /** Update the currentStep text without changing status */
-  const agentStep = useCallback(
-    (agentId: string, currentStep: string) => {
-      update((s) => updateAgent(s, agentId, { currentStep }));
-    },
-    [update]
-  );
-
-  /** Mark an agent as completed */
-  const agentComplete = useCallback(
-    (agentId: string, finalStep?: string) => {
-      update((s) =>
-        updateAgent(s, agentId, {
-          status: 'completed',
-          currentStep: finalStep || s.agents.find((a) => a.id === agentId)?.currentStep || '',
-          endTime: Date.now(),
-        })
-      );
-    },
-    [update]
-  );
-
-  /** Mark an agent as errored */
-  const agentError = useCallback(
-    (agentId: string, errorMsg: string) => {
-      update((s) =>
-        updateAgent(s, agentId, {
-          status: 'error',
-          error: errorMsg,
-          endTime: Date.now(),
-        })
-      );
-    },
-    [update]
-  );
-
-  /** Mark an agent as waiting */
-  const agentWaiting = useCallback(
-    (agentId: string, waitingFor?: string) => {
-      update((s) =>
-        updateAgent(s, agentId, {
-          status: 'waiting',
-          currentStep: waitingFor || 'Waiting...',
-        })
-      );
-    },
-    [update]
-  );
-
-  /** Transition the overall workflow phase */
   const setPhase = useCallback(
     (phase: WorkflowPhase) => {
       update((s) => ({
@@ -149,13 +36,28 @@ export function useWorkflow() {
         overallProgress:
           phase === 'error'
             ? s.overallProgress
-            : PHASE_PROGRESS[phase],
+            : PHASE_BASE_PROGRESS[phase] ?? s.overallProgress,
       }));
     },
     [update]
   );
 
-  /** Set a custom progress value (for mid-execution granularity) */
+  const setExecutionProgress = useCallback(
+    (done: number, total: number) => {
+      update((s) => {
+        if (s.phase !== 'executing' || total === 0) return s;
+        const subProgress = Math.round((done / total) * 20);
+        return {
+          ...s,
+          executionStepsDone: done,
+          executionStepsTotal: total,
+          overallProgress: 60 + subProgress,
+        };
+      });
+    },
+    [update]
+  );
+
   const setProgress = useCallback(
     (progress: number) => {
       update((s) => ({ ...s, overallProgress: Math.min(100, progress) }));
@@ -163,7 +65,6 @@ export function useWorkflow() {
     [update]
   );
 
-  /** Reset to idle */
   const reset = useCallback(() => {
     update(() => createInitialWorkflow());
   }, [update]);
@@ -172,13 +73,8 @@ export function useWorkflow() {
     workflowState,
     wf: {
       startNewQuery,
-      agentStart,
-      agentLog,
-      agentStep,
-      agentComplete,
-      agentError,
-      agentWaiting,
       setPhase,
+      setExecutionProgress,
       setProgress,
       reset,
     },

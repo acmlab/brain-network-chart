@@ -39,7 +39,6 @@ const App: React.FC = () => {
   const [selectedGeneralModel, setSelectedGeneralModel] = useState<string>('llama3');
   const [selectedNeuroModel, setSelectedNeuroModel] = useState<string>('llama3');
 
-  // Workflow state for AgentProgressPanel (inside ThinkingOverlay)
   const { workflowState, wf } = useWorkflow();
 
   useEffect(() => {
@@ -162,8 +161,6 @@ const App: React.FC = () => {
     return null;
   };
 
-  // ── Execution Logic ──────────────────────────────────────────────────────
-
   const executePlanSteps = async (
     plan: any, 
     startStepIndex: number = 0, 
@@ -181,16 +178,18 @@ const App: React.FC = () => {
       const step = stepsToRun[i];
       const params = (i === 0 && initialParamsOverride) ? initialParamsOverride : step.parameters;
 
-      const execProgress = 50 + Math.round((i / totalSteps) * 25);
-      wf.setProgress(execProgress);
-      wf.agentStep('executor', `Step ${step.step_id}: ${step.tool}`);
-      wf.agentLog('executor', `Executing ${step.tool}: ${step.description || ''}`);
+      // Update execution sub-progress
+      wf.setExecutionProgress(i, totalSteps);
 
-      // Executor messages go to Chat (user-visible)
       const executorMsg = addMessage(
         AgentType.EXECUTOR, 
         `Executing Step ${step.step_id}: ${step.tool}...`,
-        { plan, stepIndex: startStepIndex + i, tool: step.tool, params }
+        { 
+          plan, 
+          stepIndex: startStepIndex + i, 
+          tool: step.tool,
+          params: params
+        }
       );
       
       stepIdToMessageId[step.step_id] = executorMsg.id;
@@ -204,22 +203,18 @@ const App: React.FC = () => {
             if (step.tool === 'TRANSFORM_DATA') {
                 const col = params.column;
                 if (currentColumns.includes(col)) {
-                    // Preprocessor: thinking only (Panel)
-                    wf.setPhase('preprocessing');
-                    wf.agentStart('preprocessor', `Analyzing column '${col}'...`, getNeuroModel());
-                    wf.agentLog('preprocessor', `Generating numeric mapping for '${col}'`);
-
+                    const preMsg = addMessage(AgentType.PREPROCESSOR, `Analyzing column '${col}' to determine numeric mapping...`);
+                    
                     const uniqueVals = Array.from(new Set(currentData.map(row => row[col])));
-                    wf.agentLog('preprocessor', `Found ${uniqueVals.length} unique values: ${uniqueVals.join(', ')}`);
-
                     const mappingResult = await generatePreprocessingMapping(col, uniqueVals as string[]);
                     const mapping = mappingResult.mapping;
                     const rationale = mappingResult.rationale;
 
-                    wf.agentLog('preprocessor', `Mapping: ${JSON.stringify(mapping)}`);
-                    wf.agentLog('preprocessor', `Rationale: ${rationale || 'No rationale provided'}`);
-                    wf.agentComplete('preprocessor', `Mapped '${col}' to numeric`);
-                    wf.setPhase('executing');
+                    setMessages(prev => prev.map(m => 
+                      m.id === preMsg.id 
+                        ? { ...m, content: `**Analysis of '${col}':** ${rationale || 'Mapping generated.'}\n\nMapping: ${JSON.stringify(mapping)}` } 
+                        : m
+                    ));
 
                     const result = executeInternalTool(step.tool, { ...params, mapping }, currentData);
                     const transformResult = result as any;
@@ -228,6 +223,7 @@ const App: React.FC = () => {
                     const newColName = transformResult.newColumn;
                     
                     if (!currentColumns.includes(newColName)) currentColumns.push(newColName);
+                    
                     setDataset(prev => prev ? ({ ...prev, data: currentData, columns: currentColumns }) : null);
 
                     stepResult = `Converted '${col}' to '${newColName}' using mapping: ${JSON.stringify(mapping)}.`;
@@ -280,7 +276,6 @@ const App: React.FC = () => {
             }
         }
         else if (mcpToolDef) {
-           wf.agentLog('executor', `Calling MCP tool: ${step.tool}`);
            const args = { ...params };
            if (mcpToolDef.inputSchema.properties && 'data' in mcpToolDef.inputSchema.properties) {
               args.data = currentData;
@@ -289,10 +284,7 @@ const App: React.FC = () => {
            const textContent = result.content.filter(c => c.type === 'text').map(c => c.text).join('\n');
            stepResult = textContent || "Tool executed successfully.";
            viz = parseMcpResultToVisualization(step.tool, textContent);
-           if (result.isError) {
-             stepResult = `Error executing tool: ${stepResult}`;
-             wf.agentLog('executor', `ERROR: ${stepResult}`);
-           }
+           if (result.isError) stepResult = `Error executing tool: ${stepResult}`;
         } 
         else if (step.tool === 'LITERATURE_SEARCH') {
            const topic = step.description.replace('Search literature for', '').trim();
@@ -305,10 +297,7 @@ const App: React.FC = () => {
         }
       } catch (e: any) {
         stepResult = `Error: ${e.message}`;
-        wf.agentLog('executor', `ERROR: ${e.message}`);
       }
-
-      wf.agentLog('executor', `Step ${step.step_id} result: ${stepResult}`);
 
       setMessages(prev => prev.map(m => 
         m.id === executorMsg.id ? { ...m, content: `${m.content}\n\n\u2705 ${stepResult}` } : m
@@ -323,20 +312,15 @@ const App: React.FC = () => {
       await new Promise(r => setTimeout(r, 1000));
     }
 
-    wf.agentComplete('executor', `Executed ${totalSteps} step(s)`);
+    // Final execution step done
+    wf.setExecutionProgress(totalSteps, totalSteps);
 
-    // Researcher goes to Chat (user-visible output)
     if (intent === 'RESEARCH') {
       wf.setPhase('researching');
-      wf.agentStart('researcher', 'Reviewing findings...', getNeuroModel());
-      wf.agentLog('researcher', 'Analyzing execution results');
 
       const researchMsg = addMessage(AgentType.RESEARCHER, "Reviewing findings and generating report...");
       const finalInsights = await generateResearchInsights(resultsSummary.join('\n'));
       
-      wf.agentLog('researcher', 'Report generated');
-      wf.agentComplete('researcher', 'Research complete');
-
       setMessages(prev => prev.map(m => 
         m.id === researchMsg.id ? { ...m, content: finalInsights } : m
       ));
@@ -344,15 +328,18 @@ const App: React.FC = () => {
       addVisualization({
         type: VisualizationType.RESEARCH_REPORT,
         title: "Scientific Research Report",
-        data: { report: finalInsights, stepIdToMessageId },
+        data: {
+          report: finalInsights,
+          stepIdToMessageId
+        },
         messageId: researchMsg.id
       });
+
     } else {
       addMessage(AgentType.SYSTEM, "Task complete.");
     }
 
     wf.setPhase('done');
-    wf.setProgress(100);
   };
 
   const handleRestartFromStep = async (messageId: string, newParams: any) => {
@@ -387,26 +374,19 @@ const App: React.FC = () => {
         setVisualizations(prev => prev.filter(v => !v.messageId || validMessageIds.has(v.messageId)));
         setIsProcessing(true);
         
-        // Validator: thinking only (Panel)
         wf.setPhase('validating');
-        wf.agentStart('validator', 'Validating manually updated plan...', getGeneralModel());
-
+        addMessage(AgentType.PLAN_VALIDATOR, "Validating manually updated plan...");
         const validation = await validatePlan(newPlan, [...INTERNAL_TOOLS, ...mcpTools], dataset.columns);
         
         if (!validation.valid) {
-            wf.agentLog('validator', `Validation failed: ${validation.errors.join(', ')}`);
-            wf.agentError('validator', validation.errors.join(', '));
-            addMessage(AgentType.SYSTEM, `Plan validation failed: ${validation.errors.join(', ')}`);
+            addMessage(AgentType.PLAN_VALIDATOR, `\u26a0\ufe0f Validation Error: ${validation.errors.join(', ')}\n\nSuggestion: ${validation.suggestions}`);
             setIsProcessing(false);
             return;
         }
 
-        wf.agentLog('validator', 'Plan validated successfully');
-        wf.agentComplete('validator', 'Plan verified');
-
+        addMessage(AgentType.PLAN_VALIDATOR, "Plan validated successfully. Resuming execution...");
+        
         wf.setPhase('executing');
-        wf.agentStart('executor', 'Starting tool execution...', 'none');
-
         await executePlanSteps(newPlan, 0, null, [...dataset.data], [...dataset.columns], intent);
         setIsProcessing(false);
     }
@@ -417,7 +397,7 @@ const App: React.FC = () => {
     
     addMessage(AgentType.USER, query);
     setIsProcessing(true);
-    wf.startNewQuery(query);
+    wf.startNewQuery(query, messages.length);
 
     try {
       if (!ollamaConnected) {
@@ -425,22 +405,19 @@ const App: React.FC = () => {
          if (!recheck) {
             addMessage(AgentType.SYSTEM, "Error: Ollama is still unreachable.");
             wf.setPhase('error');
-            wf.agentError('orchestrator', 'Ollama unreachable');
             setIsProcessing(false);
             return;
          }
          setOllamaConnected(true);
       }
 
-      // ═══ ORCHESTRATOR (thinking only) ═══
-      wf.agentStart('orchestrator', 'Evaluating query intent...', getGeneralModel());
-      wf.agentLog('orchestrator', `Query: "${query}"`);
-      wf.agentLog('orchestrator', 'Classifying as RESEARCH or GENERAL...');
-
+      // ═══ ORCHESTRATOR ═══
+      addMessage(AgentType.ORCHESTRATOR, "Evaluating query intent...");
       const intent = await classifyQuery(query);
+      addMessage(AgentType.ORCHESTRATOR, `Identified intent: ${intent}`);
 
-      wf.agentLog('orchestrator', `Identified intent: ${intent}`);
-      wf.agentComplete('orchestrator', `Intent: ${intent}`);
+      // ═══ PLANNER ═══
+      wf.setPhase('planning');
 
       const allTools = [...INTERNAL_TOOLS, ...mcpTools];
       let plan: any = { analysis_steps: [] };
@@ -449,89 +426,45 @@ const App: React.FC = () => {
       const MAX_PLANNING_RETRIES = 3;
       let currentFeedback = "";
 
-      const plannerModel = intent === 'RESEARCH' ? getNeuroModel() : getGeneralModel();
-      const plannerType = intent === 'RESEARCH' ? 'Neuro' : 'General';
-
       while (!planIsValid && planningRetries < MAX_PLANNING_RETRIES) {
-        // ═══ PLANNER (thinking only) ═══
-        wf.setPhase('planning');
-        const isRetry = planningRetries > 0;
-        wf.agentStart('planner', 
-          isRetry 
-            ? `Refining ${plannerType} plan based on feedback (attempt ${planningRetries + 1})...` 
-            : `Formulating ${plannerType} analysis plan...`,
-          plannerModel
-        );
-        wf.agentLog('planner', isRetry
-          ? `Refining plan based on validator feedback...`
-          : `Formulating ${plannerType.toLowerCase()} task plan...`
-        );
-
-        if (isRetry) {
-          wf.agentLog('planner', `Feedback: ${currentFeedback}`);
-        }
-
         if (intent === 'RESEARCH') {
+          addMessage(AgentType.NEURO_PLANNER, planningRetries === 0 ? "Formulating research analysis plan..." : "Refining research plan based on feedback...");
           plan = await generateNeuroPlan(query, dataset.columns.join(', '), allTools, currentFeedback);
+          addMessage(AgentType.NEURO_PLANNER, `Plan created:\n${plan.analysis_steps.map((s: any) => `${s.step_id}. ${s.tool}: ${s.description}`).join('\n')}\n\nRationale: ${plan.rationale}`, { plan });
         } else {
+          addMessage(AgentType.GENERAL_PLANNER, planningRetries === 0 ? "Formulating general task plan..." : "Refining general plan based on feedback...");
           plan = await generateGeneralPlan(query, allTools, currentFeedback);
+          addMessage(AgentType.GENERAL_PLANNER, `Plan created:\n${plan.analysis_steps.map((s: any) => `${s.step_id}. ${s.tool}: ${s.description}`).join('\n')}`, { plan });
         }
 
-        // Log the full plan
-        const planSteps = (plan.analysis_steps || []);
-        if (planSteps.length === 0) {
-          wf.agentLog('planner', 'WARNING: Generated plan has no analysis steps');
-        } else {
-          wf.agentLog('planner', `Plan created with ${planSteps.length} step(s):`);
-          planSteps.forEach((s: any) => {
-            wf.agentLog('planner', `  ${s.step_id}. ${s.tool}: ${s.description || 'no description'}`);
-          });
-        }
-        if (plan.rationale) {
-          wf.agentLog('planner', `Rationale: ${plan.rationale}`);
-        }
-        wf.agentComplete('planner', 'Plan created');
-
-        // ═══ VALIDATOR (thinking only) ═══
+        // ═══ VALIDATOR ═══
         wf.setPhase('validating');
-        wf.agentStart('validator', 'Verifying analysis steps...', getGeneralModel());
-        wf.agentLog('validator', `Checking ${planSteps.length} step(s) against tool whitelist and dataset columns...`);
 
+        addMessage(AgentType.PLAN_VALIDATOR, "Verifying analysis steps...");
         const validation = await validatePlan(plan, allTools, dataset.columns);
 
         if (validation.valid) {
           planIsValid = true;
-          wf.agentLog('validator', 'All checks passed');
-          wf.agentComplete('validator', 'Plan verified');
+          addMessage(AgentType.PLAN_VALIDATOR, "Plan verified. Proceeding to execution.");
         } else {
           planningRetries++;
           currentFeedback = `Validation errors: ${validation.errors.join(', ')}. Suggestions: ${validation.suggestions}`;
-
-          wf.agentLog('validator', `Plan rejected (Attempt ${planningRetries}/${MAX_PLANNING_RETRIES}):`);
-          validation.errors.forEach((err: string) => {
-            wf.agentLog('validator', `  - ${err}`);
-          });
-          if (validation.suggestions) {
-            wf.agentLog('validator', `Suggestions: ${validation.suggestions}`);
-          }
-          wf.agentLog('validator', 'Providing feedback to Planner for correction...');
-          wf.agentComplete('validator', `Rejected (${planningRetries}/${MAX_PLANNING_RETRIES})`);
+          addMessage(AgentType.PLAN_VALIDATOR, `Plan rejected (Attempt ${planningRetries}/${MAX_PLANNING_RETRIES}):\n${validation.errors.map((e: string) => `- ${e}`).join('\n')}\n\nProviding feedback to Planner for correction...`);
           
+          // Go back to planning phase for retry
+          wf.setPhase('planning');
+
           if (planningRetries >= MAX_PLANNING_RETRIES) {
             wf.setPhase('error');
-            wf.agentError('planner', 'Failed to produce valid plan after max retries');
-            // This error goes to Chat since user needs to know
-            addMessage(AgentType.SYSTEM, "Critical: Planning failed after multiple validation cycles. Please try rephrasing your query.");
+            addMessage(AgentType.SYSTEM, "Critical: Planning failed to stabilize after multiple validation cycles. Stopping execution.");
             setIsProcessing(false);
             return;
           }
         }
       }
 
-      // ═══ EXECUTOR (Chat-visible) ═══
+      // ═══ EXECUTOR ═══
       wf.setPhase('executing');
-      wf.agentStart('executor', 'Starting tool execution...', 'none');
-      wf.agentLog('executor', `Executing plan with ${plan.analysis_steps.length} step(s)`);
 
       await executePlanSteps(plan, 0, null, [...dataset.data], [...dataset.columns], intent);
 
@@ -552,7 +485,6 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-slate-950 text-slate-200">
-      {/* Left column: Visualizer */}
       <div className="w-1/2 p-4 flex flex-col h-full border-r border-slate-800">
         <header className="mb-4 flex-none flex flex-col gap-2">
            <div className="flex justify-between items-center">
@@ -610,7 +542,6 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      {/* Right column: Chat (with ThinkingOverlay inside) */}
       <div className="w-1/2 h-full flex flex-col">
         <ChatArea 
           messages={messages} 

@@ -5,6 +5,14 @@ import MessageBubble from './MessageBubble';
 import ThinkingOverlay from '../AgentProgress/ThinkingOverlay';
 import { Send, Upload, PlayCircle } from 'lucide-react';
 
+// Agent types visible in the outer chat (not in thinking panel)
+const OUTER_CHAT_ROLES = new Set([
+  AgentType.USER,
+  AgentType.EXECUTOR,
+  AgentType.RESEARCHER,
+  AgentType.SYSTEM,
+]);
+
 interface ChatAreaProps {
   messages: ChatMessage[];
   onSendMessage: (text: string) => void;
@@ -25,6 +33,9 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messageRefs = useRef<{[key: string]: HTMLDivElement | null}>({});
 
+  // Filter: outer chat only shows Executor, Researcher, User, System
+  const outerMessages = messages.filter((m) => OUTER_CHAT_ROLES.has(m.role));
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -33,7 +44,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     if (!highlightedMessageId) {
         scrollToBottom();
     }
-  }, [messages, highlightedMessageId]);
+  }, [outerMessages.length, highlightedMessageId]);
 
   useEffect(() => {
     if (highlightedMessageId && messageRefs.current[highlightedMessageId]) {
@@ -66,18 +77,24 @@ const ChatArea: React.FC<ChatAreaProps> = ({
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
-        {messages.map((msg) => (
+        {outerMessages.map((msg) => (
           <div key={msg.id} ref={(el) => { messageRefs.current[msg.id] = el; }}>
             <MessageBubble 
                 message={msg} 
                 isHighlighted={msg.id === highlightedMessageId}
-                onRestart={onRestartStep}
+                // No editing in outer chat — editing only in thinking panel
             />
           </div>
         ))}
 
-        {/* Thinking overlay bar — appears after the last message */}
-        <ThinkingOverlay workflow={workflow} isProcessing={isProcessing} />
+        {/* ThinkingOverlay bar appears inline in chat */}
+        <ThinkingOverlay
+          workflow={workflow}
+          isProcessing={isProcessing}
+          allMessages={messages}
+          highlightedMessageId={highlightedMessageId}
+          onRestartStep={onRestartStep}
+        />
 
         <div ref={messagesEndRef} />
       </div>
@@ -103,7 +120,7 @@ const ChatArea: React.FC<ChatAreaProps> = ({
           </div>
         ) : null}
         
-        <div className="relative">
+        <form onSubmit={handleSubmit} className="relative">
           <input
             type="text"
             value={input}
@@ -111,21 +128,15 @@ const ChatArea: React.FC<ChatAreaProps> = ({
             disabled={isProcessing}
             placeholder={hasData ? "Ask about the data (e.g., 'Correlation between Amyloid and Age?')" : "Upload data first..."}
             className="w-full bg-slate-800 text-slate-200 rounded-lg pl-4 pr-12 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 border border-slate-700 disabled:opacity-50 placeholder-slate-500"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                handleSubmit(e);
-              }
-            }}
           />
           <button
-            type="button"
-            onClick={handleSubmit}
+            type="submit"
             disabled={!input.trim() || isProcessing}
             className="absolute right-2 top-2 p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md disabled:opacity-50 disabled:hover:bg-indigo-600 transition-colors"
           >
             <Send className="w-4 h-4" />
           </button>
-        </div>
+        </form>
         <input 
           type="file" 
           ref={fileInputRef} 
