@@ -162,6 +162,8 @@ const App: React.FC = () => {
     return null;
   };
 
+  // ── Execution Logic ──────────────────────────────────────────────────────
+
   const executePlanSteps = async (
     plan: any, 
     startStepIndex: number = 0, 
@@ -182,8 +184,9 @@ const App: React.FC = () => {
       const execProgress = 50 + Math.round((i / totalSteps) * 25);
       wf.setProgress(execProgress);
       wf.agentStep('executor', `Step ${step.step_id}: ${step.tool}`);
-      wf.agentLog('executor', `Executing ${step.tool}...`);
+      wf.agentLog('executor', `Executing ${step.tool}: ${step.description || ''}`);
 
+      // Executor messages go to Chat (user-visible)
       const executorMsg = addMessage(
         AgentType.EXECUTOR, 
         `Executing Step ${step.step_id}: ${step.tool}...`,
@@ -201,26 +204,22 @@ const App: React.FC = () => {
             if (step.tool === 'TRANSFORM_DATA') {
                 const col = params.column;
                 if (currentColumns.includes(col)) {
+                    // Preprocessor: thinking only (Panel)
                     wf.setPhase('preprocessing');
                     wf.agentStart('preprocessor', `Analyzing column '${col}'...`, getNeuroModel());
                     wf.agentLog('preprocessor', `Generating numeric mapping for '${col}'`);
 
-                    const preMsg = addMessage(AgentType.PREPROCESSOR, `Analyzing column '${col}' to determine numeric mapping...`);
-                    
                     const uniqueVals = Array.from(new Set(currentData.map(row => row[col])));
+                    wf.agentLog('preprocessor', `Found ${uniqueVals.length} unique values: ${uniqueVals.join(', ')}`);
+
                     const mappingResult = await generatePreprocessingMapping(col, uniqueVals as string[]);
                     const mapping = mappingResult.mapping;
                     const rationale = mappingResult.rationale;
 
                     wf.agentLog('preprocessor', `Mapping: ${JSON.stringify(mapping)}`);
+                    wf.agentLog('preprocessor', `Rationale: ${rationale || 'No rationale provided'}`);
                     wf.agentComplete('preprocessor', `Mapped '${col}' to numeric`);
                     wf.setPhase('executing');
-
-                    setMessages(prev => prev.map(m => 
-                      m.id === preMsg.id 
-                        ? { ...m, content: `**Analysis of '${col}':** ${rationale || 'Mapping generated.'}` } 
-                        : m
-                    ));
 
                     const result = executeInternalTool(step.tool, { ...params, mapping }, currentData);
                     const transformResult = result as any;
@@ -309,7 +308,7 @@ const App: React.FC = () => {
         wf.agentLog('executor', `ERROR: ${e.message}`);
       }
 
-      wf.agentLog('executor', `Step ${step.step_id} done: ${stepResult.slice(0, 80)}`);
+      wf.agentLog('executor', `Step ${step.step_id} result: ${stepResult}`);
 
       setMessages(prev => prev.map(m => 
         m.id === executorMsg.id ? { ...m, content: `${m.content}\n\n\u2705 ${stepResult}` } : m
@@ -326,6 +325,7 @@ const App: React.FC = () => {
 
     wf.agentComplete('executor', `Executed ${totalSteps} step(s)`);
 
+    // Researcher goes to Chat (user-visible output)
     if (intent === 'RESEARCH') {
       wf.setPhase('researching');
       wf.agentStart('researcher', 'Reviewing findings...', getNeuroModel());
@@ -387,16 +387,26 @@ const App: React.FC = () => {
         setVisualizations(prev => prev.filter(v => !v.messageId || validMessageIds.has(v.messageId)));
         setIsProcessing(true);
         
-        addMessage(AgentType.PLAN_VALIDATOR, "Validating manually updated plan...");
+        // Validator: thinking only (Panel)
+        wf.setPhase('validating');
+        wf.agentStart('validator', 'Validating manually updated plan...', getGeneralModel());
+
         const validation = await validatePlan(newPlan, [...INTERNAL_TOOLS, ...mcpTools], dataset.columns);
         
         if (!validation.valid) {
-            addMessage(AgentType.PLAN_VALIDATOR, `\u26a0\ufe0f Validation Error: ${validation.errors.join(', ')}\n\nSuggestion: ${validation.suggestions}`);
+            wf.agentLog('validator', `Validation failed: ${validation.errors.join(', ')}`);
+            wf.agentError('validator', validation.errors.join(', '));
+            addMessage(AgentType.SYSTEM, `Plan validation failed: ${validation.errors.join(', ')}`);
             setIsProcessing(false);
             return;
         }
 
-        addMessage(AgentType.PLAN_VALIDATOR, "Plan validated successfully. Resuming execution...");
+        wf.agentLog('validator', 'Plan validated successfully');
+        wf.agentComplete('validator', 'Plan verified');
+
+        wf.setPhase('executing');
+        wf.agentStart('executor', 'Starting tool execution...', 'none');
+
         await executePlanSteps(newPlan, 0, null, [...dataset.data], [...dataset.columns], intent);
         setIsProcessing(false);
     }
@@ -422,14 +432,14 @@ const App: React.FC = () => {
          setOllamaConnected(true);
       }
 
+      // ═══ ORCHESTRATOR (thinking only) ═══
       wf.agentStart('orchestrator', 'Evaluating query intent...', getGeneralModel());
-      wf.agentLog('orchestrator', `Query: "${query.slice(0, 60)}"`);
+      wf.agentLog('orchestrator', `Query: "${query}"`);
+      wf.agentLog('orchestrator', 'Classifying as RESEARCH or GENERAL...');
 
-      addMessage(AgentType.ORCHESTRATOR, "Evaluating query intent...");
       const intent = await classifyQuery(query);
-      addMessage(AgentType.ORCHESTRATOR, `Identified intent: ${intent}`);
 
-      wf.agentLog('orchestrator', `Intent: ${intent}`);
+      wf.agentLog('orchestrator', `Identified intent: ${intent}`);
       wf.agentComplete('orchestrator', `Intent: ${intent}`);
 
       const allTools = [...INTERNAL_TOOLS, ...mcpTools];
@@ -440,61 +450,88 @@ const App: React.FC = () => {
       let currentFeedback = "";
 
       const plannerModel = intent === 'RESEARCH' ? getNeuroModel() : getGeneralModel();
+      const plannerType = intent === 'RESEARCH' ? 'Neuro' : 'General';
 
       while (!planIsValid && planningRetries < MAX_PLANNING_RETRIES) {
+        // ═══ PLANNER (thinking only) ═══
         wf.setPhase('planning');
+        const isRetry = planningRetries > 0;
         wf.agentStart('planner', 
-          planningRetries === 0 ? 'Creating analysis plan...' : `Refining plan (attempt ${planningRetries + 1})...`,
+          isRetry 
+            ? `Refining ${plannerType} plan based on feedback (attempt ${planningRetries + 1})...` 
+            : `Formulating ${plannerType} analysis plan...`,
           plannerModel
         );
+        wf.agentLog('planner', isRetry
+          ? `Refining plan based on validator feedback...`
+          : `Formulating ${plannerType.toLowerCase()} task plan...`
+        );
 
-        if (intent === 'RESEARCH') {
-          addMessage(AgentType.NEURO_PLANNER, planningRetries === 0 ? "Formulating research analysis plan..." : "Refining research plan based on feedback...");
-          plan = await generateNeuroPlan(query, dataset.columns.join(', '), allTools, currentFeedback);
-          addMessage(AgentType.NEURO_PLANNER, `Plan created:\n${plan.analysis_steps.map((s: any) => `${s.step_id}. ${s.tool}: ${s.description}`).join('\n')}\n\nRationale: ${plan.rationale}`, { plan });
-        } else {
-          addMessage(AgentType.GENERAL_PLANNER, planningRetries === 0 ? "Formulating general task plan..." : "Refining general plan based on feedback...");
-          plan = await generateGeneralPlan(query, allTools, currentFeedback);
-          addMessage(AgentType.GENERAL_PLANNER, `Plan created:\n${plan.analysis_steps.map((s: any) => `${s.step_id}. ${s.tool}: ${s.description}`).join('\n')}`, { plan });
+        if (isRetry) {
+          wf.agentLog('planner', `Feedback: ${currentFeedback}`);
         }
 
-        const planSummary = (plan.analysis_steps || []).map((s: any) => `${s.step_id}. ${s.tool}`).join(', ');
-        wf.agentLog('planner', `Plan: ${planSummary}`);
+        if (intent === 'RESEARCH') {
+          plan = await generateNeuroPlan(query, dataset.columns.join(', '), allTools, currentFeedback);
+        } else {
+          plan = await generateGeneralPlan(query, allTools, currentFeedback);
+        }
+
+        // Log the full plan
+        const planSteps = (plan.analysis_steps || []);
+        if (planSteps.length === 0) {
+          wf.agentLog('planner', 'WARNING: Generated plan has no analysis steps');
+        } else {
+          wf.agentLog('planner', `Plan created with ${planSteps.length} step(s):`);
+          planSteps.forEach((s: any) => {
+            wf.agentLog('planner', `  ${s.step_id}. ${s.tool}: ${s.description || 'no description'}`);
+          });
+        }
+        if (plan.rationale) {
+          wf.agentLog('planner', `Rationale: ${plan.rationale}`);
+        }
         wf.agentComplete('planner', 'Plan created');
 
+        // ═══ VALIDATOR (thinking only) ═══
         wf.setPhase('validating');
         wf.agentStart('validator', 'Verifying analysis steps...', getGeneralModel());
-        wf.agentLog('validator', `Checking ${plan.analysis_steps?.length || 0} step(s)`);
+        wf.agentLog('validator', `Checking ${planSteps.length} step(s) against tool whitelist and dataset columns...`);
 
-        addMessage(AgentType.PLAN_VALIDATOR, "Verifying analysis steps...");
         const validation = await validatePlan(plan, allTools, dataset.columns);
 
         if (validation.valid) {
           planIsValid = true;
           wf.agentLog('validator', 'All checks passed');
           wf.agentComplete('validator', 'Plan verified');
-          addMessage(AgentType.PLAN_VALIDATOR, "Plan verified. Proceeding to execution.");
         } else {
           planningRetries++;
           currentFeedback = `Validation errors: ${validation.errors.join(', ')}. Suggestions: ${validation.suggestions}`;
 
-          wf.agentLog('validator', `Rejected: ${validation.errors.join('; ').slice(0, 100)}`);
+          wf.agentLog('validator', `Plan rejected (Attempt ${planningRetries}/${MAX_PLANNING_RETRIES}):`);
+          validation.errors.forEach((err: string) => {
+            wf.agentLog('validator', `  - ${err}`);
+          });
+          if (validation.suggestions) {
+            wf.agentLog('validator', `Suggestions: ${validation.suggestions}`);
+          }
+          wf.agentLog('validator', 'Providing feedback to Planner for correction...');
           wf.agentComplete('validator', `Rejected (${planningRetries}/${MAX_PLANNING_RETRIES})`);
-
-          addMessage(AgentType.PLAN_VALIDATOR, `Plan rejected (Attempt ${planningRetries}/${MAX_PLANNING_RETRIES}):\n${validation.errors.map((e: string) => `- ${e}`).join('\n')}\n\nProviding feedback to Planner for correction...`);
           
           if (planningRetries >= MAX_PLANNING_RETRIES) {
             wf.setPhase('error');
             wf.agentError('planner', 'Failed to produce valid plan after max retries');
-            addMessage(AgentType.SYSTEM, "Critical: Planning failed to stabilize after multiple validation cycles. Stopping execution.");
+            // This error goes to Chat since user needs to know
+            addMessage(AgentType.SYSTEM, "Critical: Planning failed after multiple validation cycles. Please try rephrasing your query.");
             setIsProcessing(false);
             return;
           }
         }
       }
 
+      // ═══ EXECUTOR (Chat-visible) ═══
       wf.setPhase('executing');
       wf.agentStart('executor', 'Starting tool execution...', 'none');
+      wf.agentLog('executor', `Executing plan with ${plan.analysis_steps.length} step(s)`);
 
       await executePlanSteps(plan, 0, null, [...dataset.data], [...dataset.columns], intent);
 
@@ -515,7 +552,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-slate-950 text-slate-200">
-      {/* Left column: Visualizer (unchanged) */}
+      {/* Left column: Visualizer */}
       <div className="w-1/2 p-4 flex flex-col h-full border-r border-slate-800">
         <header className="mb-4 flex-none flex flex-col gap-2">
            <div className="flex justify-between items-center">
