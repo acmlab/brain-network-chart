@@ -29,6 +29,7 @@ dependencies = [
     "requests>=2.31.0",
     "scipy>=1.11.0",
     "starlette>=0.37.0",
+    "pillow>=10.0",
 ]
 
 [project.optional-dependencies]

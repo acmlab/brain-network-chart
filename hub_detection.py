@@ -208,13 +208,16 @@ def hub_detection_grassmannifold(Wn: np.ndarray, k: int, hub: int) -> Tuple[np.n
                 grassmann_gradient = beta * (Li @ Fi - Fi @ (Fi.T @ Li @ Fi)) + temp_dist
                 
                 # Update via SVD.
-                U, UV, Vt = svd(-grassmann_gradient, full_matrices=False)
+                U, sigma, Vt = svd(-grassmann_gradient, full_matrices=False)
                 V = Vt.T
-                
-                cos_uv = np.diag(np.cos(np.diag(UV) * t))
-                sin_uv = np.diag(np.sin(np.diag(UV) * t))
-                
-                Fi = (Fi @ V @ cos_uv + U @ sin_uv) @ V.T
+
+                # MATLAB: UV is diagonal matrix of singular values
+                # Python: s is a vector -> construct Σ
+                cos_S = np.diag(np.cos(sigma * t))
+                sin_S = np.diag(np.sin(sigma * t))
+
+                # MATLAB: Fi = (Fi * V * cos_uv + U * sin_uv) * V'
+                Fi = Fi @ V @ cos_S @ V.T + U @ sin_S @ V.T
                 t = t * ts
                 
                 # Check convergence.
