@@ -83,6 +83,11 @@ const ChatArea: React.FC<ChatAreaProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messageRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
+  // pendingHighlightId: set when user clicks a bubble, consumed when thinking overlay opens
+  const [pendingHighlightId, setPendingHighlightId] = useState<string | null>(null);
+  // Which workflow's collapsed bar should be highlighted (pulsing)
+  const [highlightedWorkflowId, setHighlightedWorkflowId] = useState<string | null>(null);
+
   // Live elapsed timer for the active workflow
   const [liveElapsed, setLiveElapsed] = useState(0);
   const liveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -101,7 +106,6 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     return () => { if (liveTimerRef.current) clearInterval(liveTimerRef.current); };
   }, [history.activeId]);
 
-  // Reset timer when a new query starts
   useEffect(() => {
     if (history.activeId) {
       liveStartRef.current = Date.now();
@@ -122,32 +126,81 @@ const ChatArea: React.FC<ChatAreaProps> = ({
     if (!highlightedMessageId && !expandedWorkflowId) scrollToBottom();
   }, [messages.length, highlightedMessageId, expandedWorkflowId]);
 
+  // Scroll to highlighted message in outer chat (if it's an outer-visible message)
   useEffect(() => {
     if (highlightedMessageId && !expandedWorkflowId && messageRefs.current[highlightedMessageId]) {
       messageRefs.current[highlightedMessageId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [highlightedMessageId, expandedWorkflowId]);
 
-  // When highlightedMessageId changes, check if it belongs to a workflow's thinking messages
-  // If so, auto-expand that workflow
+  // Helper: find which workflow a message belongs to
+  const findWorkflowForMessageId = (msgId: string): WorkflowRecord | null => {
+    const msgIdx = messages.findIndex((m) => m.id === msgId);
+    if (msgIdx === -1) return null;
+    for (const rec of history.records) {
+      const end = rec.endIndex === -1 ? messages.length : rec.endIndex;
+      if (msgIdx >= rec.startIndex && msgIdx < end) return rec;
+    }
+    return null;
+  };
+
+  // Core navigation logic when highlightedMessageId changes
   useEffect(() => {
-    if (!highlightedMessageId) return;
+    if (!highlightedMessageId) {
+      setHighlightedWorkflowId(null);
+      setPendingHighlightId(null);
+      return;
+    }
+
     const msgIdx = messages.findIndex((m) => m.id === highlightedMessageId);
     if (msgIdx === -1) return;
     const msg = messages[msgIdx];
+    const targetWorkflow = findWorkflowForMessageId(highlightedMessageId);
 
-    // If the message is NOT an outer-chat role, it's a thinking message
-    if (!OUTER_CHAT_ROLES.has(msg.role)) {
-      // Find which workflow it belongs to
-      for (const rec of history.records) {
-        const end = rec.endIndex === -1 ? messages.length : rec.endIndex;
-        if (msgIdx >= rec.startIndex && msgIdx < end) {
-          setExpandedWorkflowId(rec.id);
-          break;
-        }
-      }
+    if (!targetWorkflow) return;
+
+    // Case 1: Currently inside a thinking overlay that is NOT the target workflow
+    if (expandedWorkflowId && expandedWorkflowId !== targetWorkflow.id) {
+      // Collapse current overlay first
+      setExpandedWorkflowId(null);
     }
-  }, [highlightedMessageId, history.records, messages]);
+
+    if (!OUTER_CHAT_ROLES.has(msg.role)) {
+      // The message is a "thinking" message (Orchestrator, Planner, Validator, etc.)
+      // If we're already in the right overlay, just let the overlay handle the highlight
+      if (expandedWorkflowId === targetWorkflow.id) {
+        // Already inside the correct overlay — highlight will happen via highlightedMessageId prop
+        return;
+      }
+      // Not currently expanded — highlight the bar and set pending
+      setHighlightedWorkflowId(targetWorkflow.id);
+      setPendingHighlightId(highlightedMessageId);
+    } else {
+      // The message is an outer-chat message (Executor, Researcher, etc.)
+      // Still highlight the workflow bar so user knows they can click in
+      setHighlightedWorkflowId(targetWorkflow.id);
+      setPendingHighlightId(highlightedMessageId);
+    }
+  }, [highlightedMessageId]);
+
+  // Clear bar highlight after a timeout
+  useEffect(() => {
+    if (!highlightedWorkflowId) return;
+    const timer = setTimeout(() => setHighlightedWorkflowId(null), 3000);
+    return () => clearTimeout(timer);
+  }, [highlightedWorkflowId]);
+
+  // When a thinking overlay is expanded, consume the pending highlight
+  const handleExpand = (workflowId: string) => {
+    setExpandedWorkflowId(workflowId);
+    setHighlightedWorkflowId(null);
+    // pendingHighlightId stays — ThinkingOverlay will pick it up
+  };
+
+  const handleCollapse = () => {
+    setExpandedWorkflowId(null);
+    setPendingHighlightId(null);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -207,10 +260,12 @@ const ChatArea: React.FC<ChatAreaProps> = ({
                 isActive={isActiveWf}
                 workflowMessages={wfMsgs}
                 highlightedMessageId={highlightedMessageId}
+                pendingHighlightId={pendingHighlightId}
                 onRestartStep={onRestartStep}
                 isExpanded={expandedWorkflowId === rec.id}
-                onRequestExpand={() => setExpandedWorkflowId(rec.id)}
-                onRequestCollapse={() => setExpandedWorkflowId(null)}
+                onRequestExpand={() => handleExpand(rec.id)}
+                onRequestCollapse={handleCollapse}
+                isBarHighlighted={highlightedWorkflowId === rec.id && expandedWorkflowId !== rec.id}
                 elapsedSeconds={isActiveWf ? liveElapsed : rec.elapsedSeconds}
               />
             );

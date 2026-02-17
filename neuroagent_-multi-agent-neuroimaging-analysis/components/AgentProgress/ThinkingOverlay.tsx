@@ -17,11 +17,14 @@ interface ThinkingOverlayProps {
   /** Messages that belong to this workflow (already sliced by parent) */
   workflowMessages: ChatMessage[];
   highlightedMessageId: string | null;
+  /** Set by ChatArea when user clicked a bubble — consumed on expand to highlight the agent */
+  pendingHighlightId: string | null;
   onRestartStep: (messageId: string, newParams: any) => void;
-  /** Called when user clicks expand — parent may need to track which one is open */
   onRequestExpand: () => void;
   onRequestCollapse: () => void;
   isExpanded: boolean;
+  /** Whether the collapsed bar itself should pulse (user clicked a bubble that belongs here) */
+  isBarHighlighted: boolean;
   /** Live elapsed seconds (only meaningful when isActive) */
   elapsedSeconds: number;
 }
@@ -128,7 +131,7 @@ const FlowNode: React.FC<FlowNodeProps> = ({ message, isLast, highlightedMessage
       <div
         className={`w-full max-w-2xl border rounded-lg overflow-hidden transition-all duration-300 ${theme.border} ${
           isHighlighted
-            ? `ring-2 ring-indigo-400 shadow-lg shadow-indigo-500/20 scale-[1.02] ${isPulsing ? 'animate-highlight-pulse' : ''}`
+            ? `ring-2 ring-indigo-400 shadow-lg shadow-indigo-500/20 ${isPulsing ? 'animate-glow-flash' : ''}`
             : ''
         }`}
       >
@@ -208,11 +211,15 @@ const FlowNode: React.FC<FlowNodeProps> = ({ message, isLast, highlightedMessage
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const ThinkingOverlay: React.FC<ThinkingOverlayProps> = ({
-  record, isActive, workflowMessages, highlightedMessageId,
-  onRestartStep, onRequestExpand, onRequestCollapse, isExpanded, elapsedSeconds,
+  record, isActive, workflowMessages, highlightedMessageId, pendingHighlightId,
+  onRestartStep, onRequestExpand, onRequestCollapse, isExpanded, isBarHighlighted, elapsedSeconds,
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const nodeRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+
+  // The effective highlight ID inside the overlay:
+  // Use pendingHighlightId if set (user navigated from a bubble), otherwise use highlightedMessageId
+  const effectiveHighlightId = pendingHighlightId || highlightedMessageId;
 
   // Inject CSS animation
   useEffect(() => {
@@ -221,11 +228,14 @@ const ThinkingOverlay: React.FC<ThinkingOverlayProps> = ({
     const style = document.createElement('style');
     style.id = styleId;
     style.textContent = `
-      @keyframes highlight-pulse {
-        0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
-        50% { box-shadow: 0 0 20px 4px rgba(99, 102, 241, 0.3); }
+      @keyframes glow-flash {
+        0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+        30% { box-shadow: 0 0 20px 6px rgba(99, 102, 241, 0.4); }
+        100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
       }
-      .animate-highlight-pulse { animation: highlight-pulse 0.8s ease-in-out 3; }
+      .animate-glow-flash {
+        animation: glow-flash 1.2s ease-out 1 forwards;
+      }
     `;
     document.head.appendChild(style);
   }, []);
@@ -239,13 +249,13 @@ const ThinkingOverlay: React.FC<ThinkingOverlayProps> = ({
 
   // Scroll to highlighted node
   useEffect(() => {
-    if (!isExpanded || !highlightedMessageId) return;
-    if (nodeRefs.current[highlightedMessageId]) {
+    if (!isExpanded || !effectiveHighlightId) return;
+    if (nodeRefs.current[effectiveHighlightId]) {
       setTimeout(() => {
-        nodeRefs.current[highlightedMessageId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        nodeRefs.current[effectiveHighlightId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }, 100);
     }
-  }, [highlightedMessageId, isExpanded]);
+  }, [effectiveHighlightId, isExpanded]);
 
   const queryMessages = workflowMessages.filter((m) => m.role !== AgentType.USER);
   const isComplete = record.phase === 'done' || record.phase === 'error';
@@ -324,7 +334,7 @@ const ThinkingOverlay: React.FC<ThinkingOverlayProps> = ({
                 key={msg.id}
                 message={msg}
                 isLast={idx === queryMessages.length - 1 && !isActive}
-                highlightedMessageId={highlightedMessageId}
+                highlightedMessageId={effectiveHighlightId}
                 onRestart={onRestartStep}
                 nodeRef={(el) => { nodeRefs.current[msg.id] = el; }}
               />
@@ -380,7 +390,11 @@ const ThinkingOverlay: React.FC<ThinkingOverlayProps> = ({
   if (isActive) {
     return (
       <button onClick={onRequestExpand}
-        className="mx-3 mb-2 flex items-center gap-3 px-4 py-2.5 rounded-xl bg-slate-800/80 border border-slate-700/50 hover:border-sky-600/50 hover:bg-slate-800 transition-all group cursor-pointer">
+        className={`mx-3 mb-2 flex items-center gap-3 px-4 py-2.5 rounded-xl bg-slate-800/80 border transition-all group cursor-pointer ${
+          isBarHighlighted
+            ? 'border-indigo-500 ring-2 ring-indigo-400/50 animate-glow-flash'
+            : 'border-slate-700/50 hover:border-sky-600/50 hover:bg-slate-800'
+        }`}>
         <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
           <span className="absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75 animate-ping" />
           <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-sky-500" />
@@ -392,6 +406,9 @@ const ThinkingOverlay: React.FC<ThinkingOverlayProps> = ({
             <div className="h-full bg-sky-500 rounded-full transition-all duration-500" style={{ width: `${record.overallProgress}%` }} />
           </div>
         )}
+        {isBarHighlighted && (
+          <span className="text-[9px] font-semibold text-indigo-300 animate-pulse">← Click to view agent</span>
+        )}
         <svg className="w-3.5 h-3.5 text-slate-500 group-hover:text-sky-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
         </svg>
@@ -402,12 +419,19 @@ const ThinkingOverlay: React.FC<ThinkingOverlayProps> = ({
   // Completed bar
   return (
     <button onClick={onRequestExpand}
-      className="mx-3 mb-2 flex items-center gap-2.5 px-4 py-2 rounded-xl bg-slate-800/50 border border-slate-700/30 hover:border-emerald-600/40 hover:bg-slate-800/70 transition-all group cursor-pointer">
+      className={`mx-3 mb-2 flex items-center gap-2.5 px-4 py-2 rounded-xl transition-all group cursor-pointer ${
+        isBarHighlighted
+          ? 'bg-slate-800/70 border border-indigo-500 ring-2 ring-indigo-400/50 animate-glow-flash'
+          : 'bg-slate-800/50 border border-slate-700/30 hover:border-emerald-600/40 hover:bg-slate-800/70'
+      }`}>
       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${record.phase === 'done' ? 'bg-emerald-500' : 'bg-red-500'}`} />
       <span className="text-xs text-slate-400 group-hover:text-slate-300 transition-colors">
         Thought for {formatTime(displaySeconds)}
       </span>
       <span className="text-[10px] font-medium text-slate-500 group-hover:text-emerald-400 transition-colors">— View thinking process</span>
+      {isBarHighlighted && (
+        <span className="text-[9px] font-semibold text-indigo-300 animate-pulse">← Click to view agent</span>
+      )}
       <svg className="w-3 h-3 text-slate-600 group-hover:text-emerald-400 transition-colors ml-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
       </svg>

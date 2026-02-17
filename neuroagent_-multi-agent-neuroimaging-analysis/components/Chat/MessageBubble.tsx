@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AgentType, ChatMessage } from '../../types';
 import { AGENT_COLORS } from '../../constants';
 import { User, BrainCircuit, Bot, Microscope, Terminal, GitFork, Lightbulb, Settings, FileCog, RotateCcw, Check, X, ShieldCheck } from 'lucide-react';
@@ -49,6 +48,16 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isHighlighted, o
     return '';
   });
 
+  // Single glow flash on highlight
+  const [isGlowing, setIsGlowing] = useState(false);
+  useEffect(() => {
+    if (isHighlighted) {
+      setIsGlowing(true);
+      const timer = setTimeout(() => setIsGlowing(false), 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [isHighlighted]);
+
   const handleRun = () => {
     try {
         const parsed = JSON.parse(editParams);
@@ -83,7 +92,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isHighlighted, o
             px-4 py-3 rounded-2xl text-sm leading-relaxed border shadow-sm whitespace-pre-wrap 
             ${colorClass} 
             ${isUser ? 'rounded-tr-none' : 'rounded-tl-none'}
-            ${isHighlighted ? 'ring-2 ring-indigo-500 shadow-indigo-500/20' : ''}
+            ${isHighlighted ? 'ring-2 ring-indigo-400' : ''}
+            ${isGlowing ? 'animate-glow-flash' : ''}
         `}>
           {message.content}
 
