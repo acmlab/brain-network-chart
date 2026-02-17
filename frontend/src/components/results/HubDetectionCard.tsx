@@ -51,7 +51,7 @@ export default function HubDetectionCard({ data, timestamp }: Props) {
 
       <div className="stat-grid">
         <div className="stat-box">
-          <div className="stat-label">Windows</div>
+          <div className="stat-label">Files</div>
           <div className="stat-value">{data.num_windows}</div>
         </div>
         <div className="stat-box">
@@ -80,7 +80,7 @@ export default function HubDetectionCard({ data, timestamp }: Props) {
       {/* Window slider for individual mode */}
       {!isGroup && data.num_windows > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-          <span style={{ fontSize: 12, color: '#94a3b8', whiteSpace: 'nowrap' }}>Window</span>
+          <span style={{ fontSize: 12, color: '#94a3b8', whiteSpace: 'nowrap' }}>File</span>
           <input
             type="range" min={0} max={data.num_windows - 1} value={selectedWindow}
             onChange={e => setSelectedWindow(parseInt(e.target.value))}
@@ -99,16 +99,47 @@ export default function HubDetectionCard({ data, timestamp }: Props) {
         borderRadius: 8, padding: '10px 12px', marginBottom: 12,
       }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: isGroup ? '#f87171' : '#a5b4fc', marginBottom: 6 }}>
-          {isGroup ? 'Group Common Hubs' : `Hub Nodes — Window ${selectedWindow + 1}`}
+          {isGroup ? 'Group Common Hubs' : `Hub Nodes — File ${selectedWindow + 1}`}
         </div>
         {currentWindowHubs.length > 0 ? (
-          <div style={{ fontFamily: 'monospace', fontSize: 12, color: isGroup ? '#fca5a5' : '#c7d2fe' }}>
-            {currentWindowHubs.join(', ')}
+          <div style={{ fontFamily: 'monospace', fontSize: 12, color: isGroup ? '#fca5a5' : '#c7d2fe', lineHeight: 1.6 }}>
+            {currentWindowHubs.map((idx, i) => {
+              const roi = data.roi_list?.[idx]
+              const label = roi ? `${idx} (${roi.name})` : `${idx}`
+              return <span key={idx}>{i > 0 ? ', ' : ''}{label}</span>
+            })}
           </div>
         ) : (
           <div style={{ fontSize: 12, color: '#4b5563' }}>No hub nodes</div>
         )}
       </div>
+
+      {/* ROI composite + legend side by side */}
+      {data.roi_list && currentWindowHubs.length > 0 && (() => {
+        const PALETTE = ['#ef4444','#3b82f6','#22c55e','#f59e0b','#a855f7',
+                         '#ec4899','#14b8a6','#f97316','#6366f1','#84cc16']
+        const hubsWithRoi = currentWindowHubs.filter(idx => data.roi_list![idx]?.code)
+        if (hubsWithRoi.length === 0) return null
+        const roiIds = hubsWithRoi.map(idx => data.roi_list![idx].code)
+        const url = `/roi_figs/composite?ids=${roiIds.join(',')}`
+        return (
+          <div style={{ display: 'flex', gap: 10, marginBottom: 12, alignItems: 'flex-start' }}>
+            <img src={url} style={{ width: '50%', borderRadius: 6, display: 'block', flexShrink: 0 }} alt="Hub ROIs" />
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 2 }}>ROI Legend</div>
+              {hubsWithRoi.map((idx, i) => {
+                const roi = data.roi_list![idx]
+                return (
+                  <span key={idx} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 2, background: PALETTE[i % PALETTE.length], display: 'inline-block', flexShrink: 0 }} />
+                    <span style={{ color: '#94a3b8' }}>{roi.name}</span>
+                  </span>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Hub frequency ranking (individual mode only) */}
       {hubRankings && hubRankings.length > 0 && (
@@ -117,15 +148,21 @@ export default function HubDetectionCard({ data, timestamp }: Props) {
             Hub Frequency Ranking
           </div>
           <div style={{ maxHeight: 160, overflowY: 'auto' }}>
-            {hubRankings.map((item, idx) => (
-              <div key={item.node_id} style={{
-                padding: '6px 12px', display: 'flex', justifyContent: 'space-between',
-                fontSize: 12, borderTop: idx === 0 ? 'none' : '1px solid #1e2235',
-              }}>
-                <span style={{ color: '#94a3b8' }}>#{idx + 1} Node {item.node_id}</span>
-                <span style={{ fontWeight: 600, color: '#a5b4fc' }}>{item.count}</span>
-              </div>
-            ))}
+            {hubRankings.map((item, idx) => {
+              const roiName = data.roi_list?.[item.node_id]?.name
+              return (
+                <div key={item.node_id} style={{
+                  padding: '6px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  fontSize: 12, borderTop: idx === 0 ? 'none' : '1px solid #1e2235',
+                }}>
+                  <span style={{ color: '#94a3b8' }}>
+                    #{idx + 1} Node {item.node_id}
+                    {roiName && <span style={{ color: '#64748b', marginLeft: 6 }}>{roiName}</span>}
+                  </span>
+                  <span style={{ fontWeight: 600, color: '#a5b4fc' }}>{item.count}</span>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

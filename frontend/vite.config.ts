@@ -20,6 +20,8 @@ export default defineConfig({
       '/get_growth_curve': 'http://127.0.0.1:8005',
       '/run_normative_analysis': 'http://127.0.0.1:8005',
       '/parse_csv': 'http://127.0.0.1:8005',
+      '/roi_figs': 'http://127.0.0.1:8005',
+      '/visualize_bold_adj': 'http://127.0.0.1:8005',
 
     },
   },

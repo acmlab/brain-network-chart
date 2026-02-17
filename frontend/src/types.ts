@@ -2,6 +2,7 @@ export interface FileInfo {
   filename: string;
   size: number;
   upload_time: string;
+  is_dir?: boolean;
 }
 
 export interface CorrelationResult {
@@ -50,9 +51,11 @@ export interface CFCWaveletResult {
   window_size: number;
   step_size: number;
   num_windows: number;
-  shape: number[];
   cfcs_count: number;
   cfcs: number[][][];
+  avg_cfc?: number[][];
+  files_cfcs?: { filename: string; cfcs: number[][][] }[];
+  files_avg_cfcs?: { filename: string; avg_cfc: number[][] }[];
   elapsed_seconds: number;
   console_output: string;
   progress: { step: string; message: string }[];
@@ -73,6 +76,17 @@ export interface HubDetectionResult {
   elapsed_seconds: number;
   console_output: string;
   progress: { step: string; message: string }[];
+  roi_list?: { code: string; name: string }[];
+}
+
+export interface BoldAdjResult {
+  status: string;
+  data_path: string;
+  adj_matrices: number[][][];  // list of (nodes, nodes) binary matrices
+  num_nodes: number;
+  num_windows: number;
+  ratio: number;
+  roi_list?: { code: string; name: string }[];
 }
 
 export interface GrowthCurveResult {
@@ -90,4 +104,5 @@ export type ResultItem =
   | { id: string; type: 'outliers'; timestamp: string; data: OutlierResult }
   | { id: string; type: 'cfc_wavelet'; timestamp: string; data: CFCWaveletResult }
   | { id: string; type: 'hub_detection'; timestamp: string; data: HubDetectionResult }
-  | { id: string; type: 'growth_curve'; timestamp: string; data: GrowthCurveResult };
+  | { id: string; type: 'growth_curve'; timestamp: string; data: GrowthCurveResult }
+  | { id: string; type: 'bold_adj'; timestamp: string; data: BoldAdjResult };

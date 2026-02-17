@@ -1,4 +1,4 @@
-import type { FileInfo, CorrelationResult, GroupComparisonResult, FDRResult, OutlierResult, CFCWaveletResult, HubDetectionResult, GrowthCurveResult } from './types';
+import type { FileInfo, CorrelationResult, GroupComparisonResult, FDRResult, OutlierResult, CFCWaveletResult, HubDetectionResult, GrowthCurveResult, BoldAdjResult } from './types';
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -17,9 +17,10 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json();
 }
 
-export async function uploadFile(file: File): Promise<{ status: string; file_info: FileInfo }> {
+export async function uploadFile(file: File, relativePath?: string): Promise<{ status: string; file_info: FileInfo }> {
   const form = new FormData();
   form.append('file', file);
+  if (relativePath) form.append('relative_path', relativePath);
   const res = await fetch('/upload', { method: 'POST', body: form });
   return handleResponse(res);
 }
@@ -108,9 +109,6 @@ export async function runCFCWaveletAnalysis(params: {
 
 export async function runHubDetection(params: {
   data_path: string;
-  window_size?: number;
-  step_size?: number;
-  padding?: boolean;
   ratio?: number;
   k?: number;
   hub_num?: number;
@@ -155,5 +153,14 @@ export async function parseCSV(filename: string): Promise<{
   total_rows: number;
 }> {
   const res = await fetch(`/parse_csv?filename=${encodeURIComponent(filename)}`);
+  return handleResponse(res);
+}
+
+export async function visualizeBoldAdj(data_path: string, ratio?: number): Promise<BoldAdjResult> {
+  const res = await fetch('/visualize_bold_adj', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data_path, ratio }),
+  });
   return handleResponse(res);
 }

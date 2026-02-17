@@ -6,6 +6,7 @@ import OutlierDetectionCard from './OutlierDetectionCard'
 import CFCWaveletCard from './CFCWaveletCard'
 import HubDetectionCard from './HubDetectionCard'
 import GrowthCurveCard from './GrowthCurveCard'
+import BoldAdjCard from './BoldAdjCard'
 
 interface Props {
   results: ResultItem[]
@@ -30,6 +31,8 @@ export default function ResultsQueue({ results }: Props) {
             return <HubDetectionCard key={item.id} data={item.data} timestamp={item.timestamp} />
           case 'growth_curve':
             return <GrowthCurveCard key={item.id} data={item.data} timestamp={item.timestamp} />
+          case 'bold_adj':
+            return <BoldAdjCard key={item.id} data={item.data} timestamp={item.timestamp} />
         }
       })}
     </>

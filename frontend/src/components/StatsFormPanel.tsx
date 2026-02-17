@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { ResultItem, FileInfo } from '../types'
-import { runCorrelation, runGroupComparison, applyFDRCorrection, detectOutliers, runCFCWaveletAnalysis, runHubDetection, getGrowthCurve, runNormativeAnalysis, listFiles } from '../api'
+import { runCorrelation, runGroupComparison, applyFDRCorrection, detectOutliers, runCFCWaveletAnalysis, runHubDetection, getGrowthCurve, runNormativeAnalysis, listFiles, visualizeBoldAdj } from '../api'
 
 const PHENOTYPES = [
   'Global mean of FC',
@@ -232,7 +232,12 @@ function CFCWaveletForm({ onResult }: Props) {
   const [dataPath, setDataPath] = useState('')
   const [windowSize, setWindowSize] = useState(100)
   const [stepSize, setStepSize] = useState(90)
+  const [padding, setPadding] = useState(true)
   const [ratio, setRatio] = useState(0.8)
+  const [waveletsNum, setWaveletsNum] = useState(10)
+  const [beta, setBeta] = useState(1.0)
+  const [gamma, setGamma] = useState(0.005)
+  const [maxIter, setMaxIter] = useState(100)
   const [nodeSelect, setNodeSelect] = useState(10)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -243,7 +248,8 @@ function CFCWaveletForm({ onResult }: Props) {
     try {
       const data = await runCFCWaveletAnalysis({
         data_path: dataPath, window_size: windowSize, step_size: stepSize,
-        ratio, node_select: nodeSelect,
+        padding, ratio, wavelets_num: waveletsNum, beta, gamma,
+        max_iter: maxIter, node_select: nodeSelect,
       })
       onResult({ id: uid(), type: 'cfc_wavelet', timestamp: timestamp(), data })
     } catch (e) { setError(String(e)) }
@@ -254,13 +260,13 @@ function CFCWaveletForm({ onResult }: Props) {
     <form onSubmit={handleSubmit} className="section">
       <div className="section-title">CFC Wavelet Analysis</div>
       <div className="form-row">
-        <label className="form-label">Data File</label>
+        <label className="form-label">Data File or Folder</label>
         <select className="form-select" value={dataPath} onChange={e => setDataPath(e.target.value)} required>
-          <option value="">Select uploaded file…</option>
-          {files.map(f => <option key={f.filename} value={f.filename}>{f.filename}</option>)}
+          <option value="">Select uploaded file or folder…</option>
+          {files.map(f => <option key={f.filename} value={f.filename}>{f.is_dir ? `📁 ${f.filename}` : f.filename}</option>)}
         </select>
       </div>
-      <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+      <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
         <div>
           <label className="form-label">Window Size</label>
           <input className="form-input" type="number" value={windowSize} onChange={e => setWindowSize(Number(e.target.value))} min={10} />
@@ -269,6 +275,12 @@ function CFCWaveletForm({ onResult }: Props) {
           <label className="form-label">Step Size</label>
           <input className="form-input" type="number" value={stepSize} onChange={e => setStepSize(Number(e.target.value))} min={1} />
         </div>
+        <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 2 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#94a3b8', cursor: 'pointer' }}>
+            <input type="checkbox" checked={padding} onChange={e => setPadding(e.target.checked)} />
+            Padding
+          </label>
+        </div>
       </div>
       <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <div>
@@ -276,9 +288,27 @@ function CFCWaveletForm({ onResult }: Props) {
           <input className="form-input" type="number" step="0.01" value={ratio} onChange={e => setRatio(Number(e.target.value))} min={0} max={1} />
         </div>
         <div>
-          <label className="form-label">Node Select</label>
-          <input className="form-input" type="number" value={nodeSelect} onChange={e => setNodeSelect(Number(e.target.value))} min={1} />
+          <label className="form-label">Wavelets Num</label>
+          <input className="form-input" type="number" value={waveletsNum} onChange={e => setWaveletsNum(Number(e.target.value))} min={1} />
         </div>
+      </div>
+      <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+        <div>
+          <label className="form-label">Beta</label>
+          <input className="form-input" type="number" step="0.1" value={beta} onChange={e => setBeta(Number(e.target.value))} />
+        </div>
+        <div>
+          <label className="form-label">Gamma</label>
+          <input className="form-input" type="number" step="0.001" value={gamma} onChange={e => setGamma(Number(e.target.value))} />
+        </div>
+        <div>
+          <label className="form-label">Max Iter</label>
+          <input className="form-input" type="number" value={maxIter} onChange={e => setMaxIter(Number(e.target.value))} min={1} />
+        </div>
+      </div>
+      <div className="form-row">
+        <label className="form-label">Node Select</label>
+        <input className="form-input" type="number" value={nodeSelect} onChange={e => setNodeSelect(Number(e.target.value))} min={1} />
       </div>
       {error && <div className="error-msg">{error}</div>}
       <button className="btn btn-primary" type="submit" disabled={loading || !dataPath}>
@@ -292,8 +322,6 @@ function CFCWaveletForm({ onResult }: Props) {
 function HubDetectionForm({ onResult }: Props) {
   const files = useUploadedFiles()
   const [dataPath, setDataPath] = useState('')
-  const [windowSize, setWindowSize] = useState(100)
-  const [stepSize, setStepSize] = useState(90)
   const [ratio, setRatio] = useState(0.8)
   const [k, setK] = useState(2)
   const [hubNum, setHubNum] = useState(10)
@@ -306,8 +334,7 @@ function HubDetectionForm({ onResult }: Props) {
     setLoading(true); setError('')
     try {
       const data = await runHubDetection({
-        data_path: dataPath, window_size: windowSize, step_size: stepSize,
-        ratio, k, hub_num: hubNum, use_group: useGroup,
+        data_path: dataPath, ratio, k, hub_num: hubNum, use_group: useGroup,
       })
       onResult({ id: uid(), type: 'hub_detection', timestamp: timestamp(), data })
     } catch (e) { setError(String(e)) }
@@ -318,21 +345,11 @@ function HubDetectionForm({ onResult }: Props) {
     <form onSubmit={handleSubmit} className="section">
       <div className="section-title">Hub Detection</div>
       <div className="form-row">
-        <label className="form-label">Data File</label>
+        <label className="form-label">Data File or Folder</label>
         <select className="form-select" value={dataPath} onChange={e => setDataPath(e.target.value)} required>
-          <option value="">Select uploaded file…</option>
-          {files.map(f => <option key={f.filename} value={f.filename}>{f.filename}</option>)}
+          <option value="">Select uploaded file or folder…</option>
+          {files.map(f => <option key={f.filename} value={f.filename}>{f.is_dir ? `📁 ${f.filename}` : f.filename}</option>)}
         </select>
-      </div>
-      <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        <div>
-          <label className="form-label">Window Size</label>
-          <input className="form-input" type="number" value={windowSize} onChange={e => setWindowSize(Number(e.target.value))} min={10} />
-        </div>
-        <div>
-          <label className="form-label">Step Size</label>
-          <input className="form-input" type="number" value={stepSize} onChange={e => setStepSize(Number(e.target.value))} min={1} />
-        </div>
       </div>
       <div className="form-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
         <div>
@@ -428,12 +445,55 @@ function BrainChartForm({ onResult }: Props) {
   )
 }
 
+// ── Adj Visualization ─────────────────────────────────────────
+function BoldAdjForm({ onResult }: Props) {
+  const files = useUploadedFiles()
+  const [dataPath, setDataPath] = useState('')
+  const [ratio, setRatio] = useState(0.8)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true); setError('')
+    try {
+      const data = await visualizeBoldAdj(dataPath, ratio)
+      onResult({ id: uid(), type: 'bold_adj', timestamp: timestamp(), data })
+    } catch (e) { setError(String(e)) }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="section">
+      <div className="section-title">Adj Visualization</div>
+      <div className="form-row">
+        <label className="form-label">Data File or Folder</label>
+        <select className="form-select" value={dataPath} onChange={e => setDataPath(e.target.value)} required>
+          <option value="">Select uploaded file or folder…</option>
+          {files.map(f => (
+            <option key={f.filename} value={f.filename}>{f.is_dir ? `📁 ${f.filename}` : f.filename}</option>
+          ))}
+        </select>
+      </div>
+      <div className="form-row">
+        <label className="form-label">Ratio</label>
+        <input className="form-input" type="number" step="0.01" value={ratio} onChange={e => setRatio(Number(e.target.value))} min={0} max={1} />
+      </div>
+      {error && <div className="error-msg">{error}</div>}
+      <button className="btn btn-primary" type="submit" disabled={loading || !dataPath}>
+        {loading ? 'Loading…' : 'Visualize'}
+      </button>
+    </form>
+  )
+}
+
 export default function StatsFormPanel({ onResult }: Props) {
   return (
     <>
       <BrainChartForm onResult={onResult} />
       <CFCWaveletForm onResult={onResult} />
       <HubDetectionForm onResult={onResult} />
+      <BoldAdjForm onResult={onResult} />
       <CorrelationForm onResult={onResult} />
       <GroupComparisonForm onResult={onResult} />
       <FDRForm onResult={onResult} />
