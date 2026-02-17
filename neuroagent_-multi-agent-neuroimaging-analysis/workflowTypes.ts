@@ -8,14 +8,24 @@ export type WorkflowPhase =
   | 'done'
   | 'error';
 
-export interface WorkflowState {
+/** One record per user query */
+export interface WorkflowRecord {
+  id: string;
   query: string;
   phase: WorkflowPhase;
   overallProgress: number;
-  executionStepsDone: number;
-  executionStepsTotal: number;
-  /** Index into the messages array where this query's messages start */
-  queryStartIndex: number;
+  /** Index in the global messages array where this query's messages start */
+  startIndex: number;
+  /** Index where they end (-1 means still in progress / extends to current end) */
+  endIndex: number;
+  /** Elapsed seconds when completed */
+  elapsedSeconds: number;
+}
+
+export interface WorkflowHistory {
+  records: WorkflowRecord[];
+  /** ID of the currently active workflow (null if idle) */
+  activeId: string | null;
 }
 
 export const PHASE_BASE_PROGRESS: Record<string, number> = {
@@ -29,13 +39,15 @@ export const PHASE_BASE_PROGRESS: Record<string, number> = {
   error: -1,
 };
 
-export function createInitialWorkflow(): WorkflowState {
+export function createInitialHistory(): WorkflowHistory {
   return {
-    query: '',
-    phase: 'idle',
-    overallProgress: 0,
-    executionStepsDone: 0,
-    executionStepsTotal: 0,
-    queryStartIndex: 0,
+    records: [],
+    activeId: null,
   };
+}
+
+let _idCounter = 0;
+export function generateWorkflowId(): string {
+  _idCounter++;
+  return `wf-${Date.now()}-${_idCounter}`;
 }
