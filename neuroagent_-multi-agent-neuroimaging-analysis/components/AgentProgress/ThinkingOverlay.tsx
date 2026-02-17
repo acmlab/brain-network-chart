@@ -79,14 +79,25 @@ interface FlowNodeProps {
   isLast: boolean;
   highlightedMessageId: string | null;
   onRestart?: (messageId: string, newParams: any) => void;
+  nodeRef?: (el: HTMLDivElement | null) => void;
 }
 
-const FlowNode: React.FC<FlowNodeProps> = ({ message, isLast, highlightedMessageId, onRestart }) => {
+const FlowNode: React.FC<FlowNodeProps> = ({ message, isLast, highlightedMessageId, onRestart, nodeRef }) => {
   const [expanded, setExpanded] = useState(true);
   const theme = NODE_THEME[message.role] || NODE_THEME[AgentType.SYSTEM];
   const label = AGENT_LABEL[message.role] || message.role;
   const icon = AGENT_ICON[message.role];
   const isHighlighted = message.id === highlightedMessageId;
+  const [isPulsing, setIsPulsing] = useState(false);
+
+  // Trigger a pulse animation when this node becomes highlighted
+  useEffect(() => {
+    if (isHighlighted) {
+      setIsPulsing(true);
+      const timer = setTimeout(() => setIsPulsing(false), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [isHighlighted]);
 
   const isPlanner = message.role === AgentType.NEURO_PLANNER || message.role === AgentType.GENERAL_PLANNER;
   const isExecutor = message.role === AgentType.EXECUTOR;
@@ -113,13 +124,27 @@ const FlowNode: React.FC<FlowNodeProps> = ({ message, isLast, highlightedMessage
   };
 
   return (
-    <div className="flex flex-col items-center">
+    <div ref={nodeRef} className="flex flex-col items-center">
       {/* Node card */}
       <div
-        className={`w-full max-w-2xl border rounded-lg overflow-hidden transition-all duration-200 ${theme.border} ${
-          isHighlighted ? 'ring-2 ring-indigo-500 shadow-lg shadow-indigo-500/10' : ''
+        className={`w-full max-w-2xl border rounded-lg overflow-hidden transition-all duration-300 ${theme.border} ${
+          isHighlighted
+            ? `ring-2 ring-indigo-400 shadow-lg shadow-indigo-500/20 scale-[1.02] ${isPulsing ? 'animate-highlight-pulse' : ''}`
+            : ''
         }`}
       >
+        {/* Highlight banner */}
+        {isHighlighted && isPulsing && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600/20 border-b border-indigo-500/30">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75 animate-ping" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-indigo-500" />
+            </span>
+            <span className="text-[10px] font-semibold text-indigo-300 uppercase tracking-wider">
+              Source Agent
+            </span>
+          </div>
+        )}
         {/* Header */}
         <button
           onClick={() => setExpanded(!expanded)}
@@ -214,11 +239,30 @@ const ThinkingOverlay: React.FC<ThinkingOverlayProps> = ({
   highlightedMessageId,
   onRestartStep,
 }) => {
+  // Inject highlight pulse animation
+  useEffect(() => {
+    const styleId = 'thinking-overlay-styles';
+    if (document.getElementById(styleId)) return;
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      @keyframes highlight-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
+        50% { box-shadow: 0 0 20px 4px rgba(99, 102, 241, 0.3); }
+      }
+      .animate-highlight-pulse {
+        animation: highlight-pulse 0.8s ease-in-out 3;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => { document.getElementById(styleId)?.remove(); };
+  }, []);
   const [isExpanded, setIsExpanded] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const startTimeRef = useRef<number | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const nodeRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
 
   // Timer
   useEffect(() => {
@@ -255,6 +299,19 @@ const ThinkingOverlay: React.FC<ThinkingOverlayProps> = ({
   const queryMessages = allMessages
     .slice(workflow.queryStartIndex)
     .filter((m) => m.role !== AgentType.USER);
+
+  // Auto-expand and scroll when a visualization is clicked (highlightedMessageId changes)
+  useEffect(() => {
+    if (!highlightedMessageId) return;
+    // Check if this message belongs to the thinking panel (current query, non-User)
+    const isThinkingMessage = queryMessages.some((m) => m.id === highlightedMessageId);
+    if (isThinkingMessage) {
+      if (!isExpanded) setIsExpanded(true);
+      setTimeout(() => {
+        nodeRefs.current[highlightedMessageId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 100);
+    }
+  }, [highlightedMessageId]);
 
   if (!hasWorkflow) return null;
 
@@ -347,6 +404,7 @@ const ThinkingOverlay: React.FC<ThinkingOverlayProps> = ({
                 isLast={idx === queryMessages.length - 1}
                 highlightedMessageId={highlightedMessageId}
                 onRestart={onRestartStep}
+                nodeRef={(el) => { nodeRefs.current[msg.id] = el; }}
               />
             ))}
 
