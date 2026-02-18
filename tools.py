@@ -495,7 +495,7 @@ def load_mat_v73(path: str) -> dict:
 
 _FC_PHENOTYPES = {
     "Global mean of FC": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_global_mean_of_FC.mat",
-    "Global system segregation": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_global_system_segregation.mat",
+    "Global system segregation of FC": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_global_system_segregation.mat",
     "Visual system segregation (VIS)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_VIS_system_segregation.mat",
     "Somatomotor system segregation (SM)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_SM_system_segregation.mat",
     "Dorsal attention system segregation (DA)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_DA_system_segregation.mat",
@@ -503,16 +503,59 @@ _FC_PHENOTYPES = {
     "Limbic system segregation (LIM)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_LIM_system_segregation.mat",
     "Frontoparietal system segregation (FP)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_FP_system_segregation.mat",
     "Default mode system segregation (DM)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_DM_system_segregation.mat",
+    "Grey matter volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/GMV.mat",
+    "White matter volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/WMV.mat",
+    "Subcortical grey matter volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/sGMV.mat",
+    "Ventricular volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/Ventricles.mat",
+    "Total cerebrum volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/TCV.mat",
+    "Total surface area": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/SA.mat",
+    "Mean cortical thickness": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/CT.mat",
+    "Banks STS volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/bankssts.mat",
+    "Caudal anterior cingulate volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/caudalanteriorcingulate.mat",
+    "Caudal middle frontal volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/caudalmiddlefrontal.mat",
+    "Cuneus volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/cuneus.mat",
+    "Entorhinal volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/entorhinal.mat",
+    "Frontal pole volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/frontalpole.mat",
+    "Fusiform volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/fusiform.mat",
+    "Inferior parietal volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/inferiorparietal.mat",
+    "Inferior temporal volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/inferiortemporal.mat",
+    "Insula volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/insula.mat",
+    "Isthmus cingulate volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/isthmuscingulate.mat",
+    "Lateral occipital volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/lateraloccipital.mat",
+    "Lateral orbitofrontal volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/lateralorbitofrontal.mat",
+    "Lingual volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/lingual.mat",
+    "Medial orbitofrontal volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/medialorbitofrontal.mat",
+    "Middle temporal volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/middletemporal.mat",
+    "Paracentral volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/paracentral.mat",
+    "Parahippocampal volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/parahippocampal.mat",
+    "Pars opercularis volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/parsopercularis.mat",
+    "Pars orbitalis volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/parsorbitalis.mat",
+    "Pars triangularis volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/parstriangularis.mat",
+    "Pericalcarine volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/pericalcarine.mat",
+    "Postcentral volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/postcentral.mat",
+    "Posterior cingulate volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/posteriorcingulate.mat",
+    "Precentral volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/precentral.mat",
+    "Precuneus volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/precuneus.mat",
+    "Rostral anterior cingulate volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/rostralanteriorcingulate.mat",
+    "Rostral middle frontal volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/rostralmiddlefrontal.mat",
+    "Superior frontal volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/superiorfrontal.mat",
+    "Superior parietal volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/superiorparietal.mat",
+    "Superior temporal volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/superiortemporal.mat",
+    "Supramarginal volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/supramarginal.mat",
+    "Temporal pole volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/temporalpole.mat",
+    "Transverse temporal volume": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat/transversetemporal.mat",
 }
 
 
 def _get_lifespan_phenotypes() -> dict:
-    """Discover Lifespan .mat files. Returns {name: path}."""
+    """Discover Lifespan .mat files not already in _FC_PHENOTYPES. Returns {name: path}."""
+    known_paths = set(_FC_PHENOTYPES.values())
     result = {}
     if os.path.isdir(_LIFESPAN_MAT_DIR):
         for fpath in sorted(glob_module.glob(os.path.join(_LIFESPAN_MAT_DIR, '*.mat'))):
-            name = os.path.basename(fpath)[:-4]
-            result[name] = fpath
+            if fpath not in known_paths:
+                name = os.path.basename(fpath)[:-4]
+                result[name] = fpath
     return result
 
 
