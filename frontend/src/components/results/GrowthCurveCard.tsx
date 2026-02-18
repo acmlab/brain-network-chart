@@ -17,6 +17,58 @@ function fmtVal(v: number): string {
   return v.toPrecision(4)
 }
 
+type ChartPoint = { age: number; p5: number; p25: number; p50: number; p75: number; p95: number }
+
+function interpolateCentiles(chartData: ChartPoint[], age: number) {
+  if (chartData.length === 0) return null
+  let lo = 0, hi = chartData.length - 1
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (chartData[mid].age < age) lo = mid + 1
+    else hi = mid
+  }
+  const b = chartData[lo]
+  const a = chartData[Math.max(0, lo - 1)]
+  if (a === b || b.age === a.age) return a
+  const t = (age - a.age) / (b.age - a.age)
+  const lerp = (x: number, y: number) => x + t * (y - x)
+  return {
+    p5: lerp(a.p5, b.p5),
+    p25: lerp(a.p25, b.p25),
+    p50: lerp(a.p50, b.p50),
+    p75: lerp(a.p75, b.p75),
+    p95: lerp(a.p95, b.p95),
+  }
+}
+
+function makeCustomTooltip(chartData: ChartPoint[]) {
+  return function CustomTooltip({ active, payload, label }: any) {
+    if (!active || !payload?.length) return null
+    const age = Number(label)
+    const c = interpolateCentiles(chartData, age)
+    const overlayPoint = payload.find((p: any) => p.name === 'Your data')
+    return (
+      <div style={{ background: '#1a1d2e', border: '1px solid #2d3250', borderRadius: 8, padding: '8px 12px', fontSize: 11 }}>
+        <div style={{ color: '#a5b4fc', marginBottom: 4 }}>Age: {age.toFixed(1)} yr</div>
+        {c && (
+          <>
+            <div style={{ color: '#475569' }}>5th:  {fmtVal(c.p5)}</div>
+            <div style={{ color: '#7c3aed' }}>25th: {fmtVal(c.p25)}</div>
+            <div style={{ color: '#a5b4fc' }}>50th: {fmtVal(c.p50)}</div>
+            <div style={{ color: '#7c3aed' }}>75th: {fmtVal(c.p75)}</div>
+            <div style={{ color: '#475569' }}>95th: {fmtVal(c.p95)}</div>
+          </>
+        )}
+        {overlayPoint && (
+          <div style={{ color: '#f87171', marginTop: 4, borderTop: '1px solid #2d3250', paddingTop: 4 }}>
+            Your data: {fmtVal(overlayPoint.value)}
+          </div>
+        )}
+      </div>
+    )
+  }
+}
+
 export default function GrowthCurveCard({ data, timestamp }: Props) {
   const chartData = useMemo(() => {
     if (!data.data) return []
@@ -44,9 +96,17 @@ export default function GrowthCurveCard({ data, timestamp }: Props) {
         if (val !== undefined) { if (val < min) min = val; if (val > max) max = val }
       })
     })
+    if (data.overlay) {
+      data.overlay.values.forEach(val => {
+        if (val < min) min = val
+        if (val > max) max = val
+      })
+    }
     const margin = (max - min) * 0.1
     return [min - margin, max + margin]
-  }, [chartData])
+  }, [chartData, data.overlay])
+
+  const CustomTooltip = useMemo(() => makeCustomTooltip(chartData as ChartPoint[]), [chartData])
 
   return (
     <div className="result-card">
@@ -91,13 +151,7 @@ export default function GrowthCurveCard({ data, timestamp }: Props) {
               tick={{ fontSize: 10, fill: '#64748b' }}
               tickFormatter={v => fmtVal(v)}
             />
-            <Tooltip
-              contentStyle={{ background: '#1a1d2e', border: '1px solid #2d3250', borderRadius: 8, fontSize: 11 }}
-              labelStyle={{ color: '#a5b4fc' }}
-              itemStyle={{ color: '#e2e8f0' }}
-              formatter={(v: number) => fmtVal(v)}
-              labelFormatter={v => `Age: ${Number(v).toFixed(1)} yr`}
-            />
+            <Tooltip content={<CustomTooltip />} />
             <Legend iconType="line" iconSize={12} verticalAlign="top"
               wrapperStyle={{ fontSize: 11, paddingBottom: 4 }} />
             <Line dataKey="p5"  stroke="#475569" strokeWidth={1.5} strokeDasharray="5 4" dot={false} name="5th" />
@@ -110,6 +164,8 @@ export default function GrowthCurveCard({ data, timestamp }: Props) {
                 data={data.overlay.age.map((a, i) => ({ age: a, value: data.overlay!.values[i] }))}
                 dataKey="value"
                 fill="#f87171"
+                fillOpacity={0.25}
+                r={3}
                 name="Your data"
               />
             )}
