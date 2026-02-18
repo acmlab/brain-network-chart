@@ -17,6 +17,7 @@ from typing import Optional, Tuple, List
 
 _ROI_CSV = "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/roi_figs/code_name.csv"
 _ROI_FIG_DIR = "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/roi_figs"
+_LIFESPAN_MAT_DIR = "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/Lifespan/curve_mat"
 _ROI_PALETTE = [
     "#ef4444", "#3b82f6", "#22c55e", "#f59e0b", "#a855f7",
     "#ec4899", "#14b8a6", "#f97316", "#6366f1", "#84cc16",
@@ -492,24 +493,43 @@ def load_mat_v73(path: str) -> dict:
     }
 
 
-def load_curve_data(phenotype: str, 
-    PHENOTYPES = {
-        "Global mean of FC": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_global_mean_of_FC.mat",
-        "Global system segregation": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_global_system_segregation.mat",
-        "Visual system segregation (VIS)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_VIS_system_segregation.mat",
-        "Somatomotor system segregation (SM)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_SM_system_segregation.mat",
-        "Dorsal attention system segregation (DA)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_DA_system_segregation.mat",
-        "Ventral attention system segregation (VA)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_VA_system_segregation.mat",
-        "Limbic system segregation (LIM)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_LIM_system_segregation.mat",
-        "Frontoparietal system segregation (FP)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_FP_system_segregation.mat",
-        "Default mode system segregation (DM)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_DM_system_segregation.mat",
-    }) -> dict:
-    """Load growth curve data for a phenotype."""
-    
-    if phenotype not in PHENOTYPES:
-        raise ValueError(f"Phenotype not found. Available: {list(PHENOTYPES.keys())}")
-    mat_path = PHENOTYPES[phenotype]
-    return load_mat_v73(mat_path)
+_FC_PHENOTYPES = {
+    "Global mean of FC": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_global_mean_of_FC.mat",
+    "Global system segregation": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_global_system_segregation.mat",
+    "Visual system segregation (VIS)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_VIS_system_segregation.mat",
+    "Somatomotor system segregation (SM)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_SM_system_segregation.mat",
+    "Dorsal attention system segregation (DA)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_DA_system_segregation.mat",
+    "Ventral attention system segregation (VA)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_VA_system_segregation.mat",
+    "Limbic system segregation (LIM)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_LIM_system_segregation.mat",
+    "Frontoparietal system segregation (FP)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_FP_system_segregation.mat",
+    "Default mode system segregation (DM)": "/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/Data/Growth_curve_DM_system_segregation.mat",
+}
+
+
+def _get_lifespan_phenotypes() -> dict:
+    """Discover Lifespan .mat files. Returns {name: path}."""
+    result = {}
+    if os.path.isdir(_LIFESPAN_MAT_DIR):
+        for fpath in sorted(glob_module.glob(os.path.join(_LIFESPAN_MAT_DIR, '*.mat'))):
+            name = os.path.basename(fpath)[:-4]
+            result[name] = fpath
+    return result
+
+
+def list_available_phenotypes() -> list:
+    """Return all available phenotype names (FC + Lifespan)."""
+    return list(_FC_PHENOTYPES.keys()) + list(_get_lifespan_phenotypes().keys())
+
+
+def load_curve_data(phenotype: str) -> dict:
+    """Load growth curve data for a phenotype (FC .mat or Lifespan .mat)."""
+    if phenotype in _FC_PHENOTYPES:
+        return load_mat_v73(_FC_PHENOTYPES[phenotype])
+    lifespan = _get_lifespan_phenotypes()
+    if phenotype in lifespan:
+        return load_mat_v73(lifespan[phenotype])
+    all_keys = list(_FC_PHENOTYPES.keys()) + list(lifespan.keys())
+    raise ValueError(f"Phenotype not found. Available: {all_keys}")
 
 
 def _read_table(contents: bytes) -> pd.DataFrame:

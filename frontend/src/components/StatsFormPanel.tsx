@@ -22,6 +22,16 @@ function useUploadedFiles() {
   return files
 }
 
+function usePhenotypes() {
+  const [phenotypes, setPhenotypes] = useState<string[]>(PHENOTYPES)
+  useEffect(() => {
+    fetch('/get_phenotypes').then(r => r.json()).then(d => {
+      if (d.phenotypes?.length) setPhenotypes(d.phenotypes)
+    }).catch(() => {})
+  }, [])
+  return phenotypes
+}
+
 interface Props {
   onResult: (item: ResultItem) => void
 }
@@ -382,6 +392,7 @@ function HubDetectionForm({ onResult }: Props) {
 // ── BrainChart (Growth Curve + Overlay) ──────────────────────
 function BrainChartForm({ onResult }: Props) {
   const files = useUploadedFiles()
+  const phenotypes = usePhenotypes()
   const [phenotype, setPhenotype] = useState(PHENOTYPES[0])
   const [overlayFile, setOverlayFile] = useState('')
   const [ageCol, setAgeCol] = useState('')
@@ -393,18 +404,28 @@ function BrainChartForm({ onResult }: Props) {
     e.preventDefault()
     setLoading(true); setError('')
     try {
-      const curveResp = await getGrowthCurve(phenotype)
-      let overlay: { age: number[]; values: number[] } | undefined
       if (overlayFile && ageCol && valCol) {
-        const overlayResp = await runNormativeAnalysis({
+        const resp = await runNormativeAnalysis({
           x_phenotype: phenotype, y_path: overlayFile, age_col: ageCol, val_col: valCol,
         })
-        overlay = overlayResp.data
+        const { age, values, ...curveData } = resp.data
+        onResult({
+          id: uid(), type: 'growth_curve', timestamp: timestamp(),
+          data: {
+            status: resp.status,
+            phenotype: resp.phenotype,
+            elapsed_seconds: resp.elapsed_seconds,
+            data: curveData,
+            overlay: { age, values },
+          },
+        })
+      } else {
+        const curveResp = await getGrowthCurve(phenotype)
+        onResult({
+          id: uid(), type: 'growth_curve', timestamp: timestamp(),
+          data: { ...curveResp },
+        })
       }
-      onResult({
-        id: uid(), type: 'growth_curve', timestamp: timestamp(),
-        data: { ...curveResp, overlay },
-      })
     } catch (e) { setError(String(e)) }
     finally { setLoading(false) }
   }
@@ -415,7 +436,7 @@ function BrainChartForm({ onResult }: Props) {
       <div className="form-row">
         <label className="form-label">Phenotype</label>
         <select className="form-select" value={phenotype} onChange={e => setPhenotype(e.target.value)}>
-          {PHENOTYPES.map(p => <option key={p} value={p}>{p}</option>)}
+          {phenotypes.map(p => <option key={p} value={p}>{p}</option>)}
         </select>
       </div>
       <div className="form-row">

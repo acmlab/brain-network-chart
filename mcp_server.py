@@ -41,6 +41,7 @@ from tools import (
     load_adjs_from_path,
     list_bold_paths,
     load_adjs_from_npy,
+    list_available_phenotypes,
     _ROI_FIG_DIR,
 )
 
@@ -1991,6 +1992,17 @@ async def http_run_hub_detection(request: Request) -> JSONResponse:
         raise HTTPException(status_code=400, detail=f"Invalid parameters: {str(e)}")
     except Exception as e:
         logger.error(f"Request error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@server.custom_route("/get_phenotypes", methods=["GET"])
+@rate_limit
+async def http_get_phenotypes(request: Request) -> JSONResponse:
+    """Return all available phenotype names."""
+    try:
+        return JSONResponse({"phenotypes": list_available_phenotypes()})
+    except Exception as e:
+        logger.error(f"get_phenotypes error: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

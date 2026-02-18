@@ -22,7 +22,7 @@ export default defineConfig({
       '/parse_csv': 'http://127.0.0.1:8005',
       '/roi_figs': 'http://127.0.0.1:8005',
       '/visualize_bold_adj': 'http://127.0.0.1:8005',
-
+      '/get_phenotypes': 'http://127.0.0.1:8005',
     },
   },
 })

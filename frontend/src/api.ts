@@ -136,7 +136,12 @@ export async function runNormativeAnalysis(params: {
   y_path: string;
   age_col: string;
   val_col: string;
-}): Promise<{ status: string; data: { age: number[]; values: number[] } }> {
+}): Promise<{
+  status: string;
+  phenotype: string;
+  elapsed_seconds: number;
+  data: { X: number[]; centiles: number[][]; age: number[]; values: number[] };
+}> {
   const res = await fetch('/run_normative_analysis', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

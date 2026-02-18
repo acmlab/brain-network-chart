@@ -10,6 +10,13 @@ interface Props {
   timestamp: string
 }
 
+function fmtVal(v: number): string {
+  const abs = Math.abs(v)
+  if (abs === 0) return '0'
+  if (abs >= 0.01) return v.toFixed(4)
+  return v.toPrecision(4)
+}
+
 export default function GrowthCurveCard({ data, timestamp }: Props) {
   const chartData = useMemo(() => {
     if (!data.data) return []
@@ -82,13 +89,13 @@ export default function GrowthCurveCard({ data, timestamp }: Props) {
               domain={yAxisDomain}
               width={72}
               tick={{ fontSize: 10, fill: '#64748b' }}
-              tickFormatter={v => v.toFixed(3)}
+              tickFormatter={v => fmtVal(v)}
             />
             <Tooltip
               contentStyle={{ background: '#1a1d2e', border: '1px solid #2d3250', borderRadius: 8, fontSize: 11 }}
               labelStyle={{ color: '#a5b4fc' }}
               itemStyle={{ color: '#e2e8f0' }}
-              formatter={(v: number) => v.toFixed(4)}
+              formatter={(v: number) => fmtVal(v)}
               labelFormatter={v => `Age: ${Number(v).toFixed(1)} yr`}
             />
             <Legend iconType="line" iconSize={12} verticalAlign="top"
