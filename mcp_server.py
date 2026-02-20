@@ -1867,60 +1867,184 @@ async def api_schema(request: Request) -> JSONResponse:
         "endpoints": {
             "run_cfc_wavelet_analysis": {
                 "method": "POST",
-                "description": "Cross-frequency coupling wavelet analysis",
-                "parameters": CFCWaveletRequest.model_json_schema(),
+                "description": """Run cross-frequency coupling (CFC) analysis using harmonic wavelets on brain functional connectivity data.
+Computes sliding-window adjacency matrices and applies wavelet decomposition to extract CFC features.
+Parameters:
+- data_path: Path to input data. Supports:
+    (1) CSV file with BOLD time series (rows=timepoints, columns=brain nodes);
+    (2) .npy file with pre-computed adjacency matrices (shape: num_windows x nodes x nodes);
+    (3) folder path containing multiple CSV files for batch processing.
+    (default: data_example_BOLD.csv)
+- window_size: Sliding window size in timepoints, applies to CSV input (default: 100, range: 10-1000)
+- step_size: Window step size in timepoints, applies to CSV input (default: 90, range: 1-500)
+- padding: Pad signal edges to ensure complete windows, applies to CSV input (default: True)
+- ratio: Edge weight threshold ratio for binarizing adjacency matrix (default: 0.8, range: 0.0-1.0)
+- wavelets_num: Number of harmonic wavelets (default: 10, range: 1-100)
+- beta: Regularization parameter (default: 1.0)
+- gamma: Convergence threshold (default: 0.1)
+- max_iter: Maximum iterations (default: 100, range: 1-1000)
+- node_select: Node selection parameter (default: 10)
+Returns: avg_cfc matrix, per-file cfcs and averages, window count, elapsed_seconds, console_output, progress log""",
+                "parameters": """Run cross-frequency coupling (CFC) analysis using harmonic wavelets on brain functional connectivity data.
+Computes sliding-window adjacency matrices and applies wavelet decomposition to extract CFC features.
+Parameters:
+- data_path: Path to input data. Supports:
+    (1) CSV file with BOLD time series (rows=timepoints, columns=brain nodes);
+    (2) .npy file with pre-computed adjacency matrices (shape: num_windows x nodes x nodes);
+    (3) folder path containing multiple CSV files for batch processing.
+    (default: data_example_BOLD.csv)
+- window_size: Sliding window size in timepoints, applies to CSV input (default: 100, range: 10-1000)
+- step_size: Window step size in timepoints, applies to CSV input (default: 90, range: 1-500)
+- padding: Pad signal edges to ensure complete windows, applies to CSV input (default: True)
+- ratio: Edge weight threshold ratio for binarizing adjacency matrix (default: 0.8, range: 0.0-1.0)
+- wavelets_num: Number of harmonic wavelets (default: 10, range: 1-100)
+- beta: Regularization parameter (default: 1.0)
+- gamma: Convergence threshold (default: 0.1)
+- max_iter: Maximum iterations (default: 100, range: 1-1000)
+- node_select: Node selection parameter (default: 10)
+Returns: avg_cfc matrix, per-file cfcs and averages, window count, elapsed_seconds, console_output, progress log""",
             },
             "run_hub_detection": {
                 "method": "POST",
-                "description": "Hub detection in brain networks",
-                "parameters": HubDetectionRequest.model_json_schema(),
+                "description": """Detect hub nodes in brain functional connectivity networks using graph embedding analysis.
+Supports both single-subject and group-level Grassmann manifold methods.
+Parameters:
+- data_path: Path to input data. Supports:
+    (1) CSV file with BOLD time series (rows=timepoints, columns=brain nodes);
+    (2) folder path containing multiple CSV files for batch/group processing.
+    (default: data_example_BOLD.csv)
+- ratio: Edge weight threshold for binarizing adjacency matrix (default: 0.8, range: 0.0-1.0)
+- k: Graph embedding dimension (default: 2, range: 1-100)
+- hub_num: Number of hub nodes to identify (default: 10)
+- use_group: Use group/Grassmann manifold method combining multiple networks (default: False)
+Returns: hub node indices, embeddings, selection matrices, ROI labels, elapsed_seconds, console_output, progress log""",
+                "parameters": """Detect hub nodes in brain functional connectivity networks using graph embedding analysis.
+Supports both single-subject and group-level Grassmann manifold methods.
+Parameters:
+- data_path: Path to input data. Supports:
+    (1) CSV file with BOLD time series (rows=timepoints, columns=brain nodes);
+    (2) folder path containing multiple CSV files for batch/group processing.
+    (default: data_example_BOLD.csv)
+- ratio: Edge weight threshold for binarizing adjacency matrix (default: 0.8, range: 0.0-1.0)
+- k: Graph embedding dimension (default: 2, range: 1-100)
+- hub_num: Number of hub nodes to identify (default: 10)
+- use_group: Use group/Grassmann manifold method combining multiple networks (default: False)
+Returns: hub node indices, embeddings, selection matrices, ROI labels, elapsed_seconds, console_output, progress log""",
             },
             "get_growth_curve": {
                 "method": "POST",
-                "description": f"""To see the difference with normative model, overlay the uploaded data on top of aging curves for a specific phenotype.
+                "description": f"""Load normative aging trajectory (growth curve) data for a given brain phenotype.
+Returns age (x) and phenotype value (y) arrays representing the lifespan normative curve.
 Parameters:
-- x_phenotype: Name of phenotype in the database to compare, select from {list_available_phenotypes()}
-- y_path: Path to uploaded CSV file with overlay data
-- age_col: Column name for age values in the CSV file
-- val_col: Column name for overlay values in the CSV file
-Returns: Combined x and y data for normative modeling""",
-                "parameters": f"""To see the difference with normative model, overlay the uploaded data on top of aging curves for a specific phenotype.
+- phenotype: Name of phenotype to load, select from {list_available_phenotypes()}
+Returns: x/y arrays for the normative growth curve, phenotype name, elapsed_seconds""",
+                "parameters": f"""Load normative aging trajectory (growth curve) data for a given brain phenotype.
+Returns age (x) and phenotype value (y) arrays representing the lifespan normative curve.
 Parameters:
-- x_phenotype: Name of phenotype in the database to compare, select from {list_available_phenotypes()}
-- y_path: Path to uploaded CSV file with overlay data
-- age_col: Column name for age values in the CSV file
-- val_col: Column name for overlay values in the CSV file
-Returns: Combined x and y data for normative modeling""",
+- phenotype: Name of phenotype to load, select from {list_available_phenotypes()}
+Returns: x/y arrays for the normative growth curve, phenotype name, elapsed_seconds""",
             },
             "run_normative_analysis": {
                 "method": "POST",
-                "description": "Normative developmental trajectory analysis",
-                "parameters": NormativeAnalysisRequest.model_json_schema(),
+                "description": f"""Overlay individual or group data onto a normative aging trajectory to visualize deviation from the norm.
+Parameters:
+- x_phenotype: Name of phenotype/growth curve, select from {list_available_phenotypes()}
+- y_path: Path to uploaded CSV file with subject overlay data
+- age_col: Column name for age values in the CSV file
+- val_col: Column name for metric/phenotype values in the CSV file
+Returns: Combined normative (x) and overlay (y) data for visualization, elapsed_seconds""",
+                "parameters": f"""Overlay individual or group data onto a normative aging trajectory to visualize deviation from the norm.
+Parameters:
+- x_phenotype: Name of phenotype/growth curve, select from {list_available_phenotypes()}
+- y_path: Path to uploaded CSV file with subject overlay data
+- age_col: Column name for age values in the CSV file
+- val_col: Column name for metric/phenotype values in the CSV file
+Returns: Combined normative (x) and overlay (y) data for visualization, elapsed_seconds""",
             },
             "search_pubmed": {
                 "method": "POST",
-                "description": "Search PubMed via NCBI E-utilities (esearch + esummary)",
-                "parameters": PubMedSearchRequest.model_json_schema(),
+                "description": """Search PubMed via NCBI E-utilities (esearch + esummary) and return structured results.
+Supports full PubMed query syntax including MeSH terms and boolean operators.
+Parameters:
+- query: PubMed query string (supports PubMed syntax, e.g., "fMRI AND aging[MeSH]")
+- max_results: Maximum number of papers to return (default: 20, range: 1-200)
+- year_from: Filter start year inclusive (optional)
+- year_to: Filter end year inclusive (optional)
+Returns: List of {pmid, title, journal, year, authors, url}, suggested_keywords, progress log""",
+                "parameters": """Search PubMed via NCBI E-utilities (esearch + esummary) and return structured results.
+Supports full PubMed query syntax including MeSH terms and boolean operators.
+Parameters:
+- query: PubMed query string (supports PubMed syntax, e.g., "fMRI AND aging[MeSH]")
+- max_results: Maximum number of papers to return (default: 20, range: 1-200)
+- year_from: Filter start year inclusive (optional)
+- year_to: Filter end year inclusive (optional)
+Returns: List of {pmid, title, journal, year, authors, url}, suggested_keywords, progress log""",
             },
             "openalex_search": {
                 "method": "POST",
-                "description": "Scholarly discovery search via OpenAlex works",
-                "parameters": OpenAlexSearchRequest.model_json_schema(),
+                "description": """Search scholarly literature via OpenAlex works API for academic discovery.
+Parameters:
+- query: Search query for OpenAlex works
+- max_results: Maximum results to return (default: 10, range: 1-50)
+- from_year: Filter from publication year inclusive (optional)
+- to_year: Filter to publication year inclusive (optional)
+Returns: List of {title, year, doi, url, venue, authors, cited_by_count}, progress log""",
+                "parameters": """Search scholarly literature via OpenAlex works API for academic discovery.
+Parameters:
+- query: Search query for OpenAlex works
+- max_results: Maximum results to return (default: 10, range: 1-50)
+- from_year: Filter from publication year inclusive (optional)
+- to_year: Filter to publication year inclusive (optional)
+Returns: List of {title, year, doi, url, venue, authors, cited_by_count}, progress log""",
             },
             "crossref_enrich": {
                 "method": "POST",
-                "description": "Enrich/normalize bibliographic metadata by DOI via Crossref",
-                "parameters": CrossrefEnrichRequest.model_json_schema(),
+                "description": """Enrich and normalize bibliographic metadata for a list of DOIs via Crossref API.
+Parameters:
+- dois: List of DOIs to enrich (e.g., ["10.1038/s41593-021-00895-9"])
+- max_items: Maximum DOIs to process as a safety cap (default: 50, range: 1-200)
+Returns: List of {doi, title, journal, year, publisher, url, authors, type} for each DOI""",
+                "parameters": """Enrich and normalize bibliographic metadata for a list of DOIs via Crossref API.
+Parameters:
+- dois: List of DOIs to enrich (e.g., ["10.1038/s41593-021-00895-9"])
+- max_items: Maximum DOIs to process as a safety cap (default: 50, range: 1-200)
+Returns: List of {doi, title, journal, year, publisher, url, authors, type} for each DOI""",
             },
             "internet_search": {
                 "method": "POST",
-                "description": "Combined internet search (OpenAlex discovery + Crossref DOI enrichment)",
-                "parameters": InternetSearchRequest.model_json_schema(),
+                "description": """Combined scholarly internet search using OpenAlex discovery and Crossref DOI enrichment.
+Retrieves and deduplicates results from both sources, merging metadata.
+Parameters:
+- query: Search query
+- max_results: Maximum results to return (default: 10, range: 1-50)
+- from_year: Filter from publication year inclusive (optional)
+- to_year: Filter to publication year inclusive (optional)
+Returns: Merged list of {title, year, doi, url, venue, authors, source}, progress log""",
+                "parameters": """Combined scholarly internet search using OpenAlex discovery and Crossref DOI enrichment.
+Retrieves and deduplicates results from both sources, merging metadata.
+Parameters:
+- query: Search query
+- max_results: Maximum results to return (default: 10, range: 1-50)
+- from_year: Filter from publication year inclusive (optional)
+- to_year: Filter to publication year inclusive (optional)
+Returns: Merged list of {title, year, doi, url, venue, authors, source}, progress log""",
             },
             "openneuro_search": {
                 "method": "POST",
-                "description": "Search OpenNeuro datasets via GraphQL",
-                "parameters": OpenNeuroSearchRequest.model_json_schema(),
+                "description": """Search OpenNeuro neuroimaging datasets via GraphQL API with client-side keyword scoring.
+Note: OpenNeuro's server-side search() returns null; client-side scoring on dataset listings is used instead.
+Parameters:
+- query: Keyword query for OpenNeuro datasets
+- max_results: Number of datasets to return (default: 10, range: 1-50)
+- modality: Optional modality filter, best-effort (e.g., "MRI", "EEG")
+Returns: List of {dataset_id, name, url, source}, progress log""",
+                "parameters": """Search OpenNeuro neuroimaging datasets via GraphQL API with client-side keyword scoring.
+Note: OpenNeuro's server-side search() returns null; client-side scoring on dataset listings is used instead.
+Parameters:
+- query: Keyword query for OpenNeuro datasets
+- max_results: Number of datasets to return (default: 10, range: 1-50)
+- modality: Optional modality filter, best-effort (e.g., "MRI", "EEG")
+Returns: List of {dataset_id, name, url, source}, progress log""",
             },
             # "upload": {
             #     "method": "POST",
