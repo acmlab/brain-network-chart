@@ -1877,10 +1877,20 @@ async def api_schema(request: Request) -> JSONResponse:
             },
             "get_growth_curve": {
                 "method": "POST",
-                "description": "Load growth curve data",
-                "parameters": {
-                    "phenotype": {"type": "string", "description": "Phenotype name"}
-                }
+                "description": f"""To see the difference with normative model, overlay the uploaded data on top of aging curves for a specific phenotype.
+Parameters:
+- x_phenotype: Name of phenotype in the database to compare, select from {list_available_phenotypes()}
+- y_path: Path to uploaded CSV file with overlay data
+- age_col: Column name for age values in the CSV file
+- val_col: Column name for overlay values in the CSV file
+Returns: Combined x and y data for normative modeling""",
+                "parameters": f"""To see the difference with normative model, overlay the uploaded data on top of aging curves for a specific phenotype.
+Parameters:
+- x_phenotype: Name of phenotype in the database to compare, select from {list_available_phenotypes()}
+- y_path: Path to uploaded CSV file with overlay data
+- age_col: Column name for age values in the CSV file
+- val_col: Column name for overlay values in the CSV file
+Returns: Combined x and y data for normative modeling""",
             },
             "run_normative_analysis": {
                 "method": "POST",
@@ -1912,25 +1922,25 @@ async def api_schema(request: Request) -> JSONResponse:
                 "description": "Search OpenNeuro datasets via GraphQL",
                 "parameters": OpenNeuroSearchRequest.model_json_schema(),
             },
-            "upload": {
-                "method": "POST",
-                "description": "Upload a file for analysis (multipart/form-data)",
-                "parameters": {
-                    "file": {"type": "file", "description": "Multipart file field named 'file'"}
-                }
-            },
-            "list_files": {
-                "method": "GET",
-                "description": "List uploaded files",
-                "parameters": {}
-            },
-            "delete_file": {
-                "method": "DELETE or POST",
-                "description": "Delete an uploaded file (JSON body: {\"filename\": \"...\"})",
-                "parameters": {
-                    "filename": {"type": "string", "description": "Name of the uploaded file to delete"}
-                }
-            },
+            # "upload": {
+            #     "method": "POST",
+            #     "description": "Upload a file for analysis (multipart/form-data)",
+            #     "parameters": {
+            #         "file": {"type": "file", "description": "Multipart file field named 'file'"}
+            #     }
+            # },
+            # "list_files": {
+            #     "method": "GET",
+            #     "description": "List uploaded files",
+            #     "parameters": {}
+            # },
+            # "delete_file": {
+            #     "method": "DELETE or POST",
+            #     "description": "Delete an uploaded file (JSON body: {\"filename\": \"...\"})",
+            #     "parameters": {
+            #         "filename": {"type": "string", "description": "Name of the uploaded file to delete"}
+            #     }
+            # },
         },
         "rate_limiting": {
             "requests_per_window": RATE_LIMIT_REQUESTS,
