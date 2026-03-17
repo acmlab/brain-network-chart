@@ -1,0 +1,2 @@
+beautifulsoup4>=4.12.3
+ollama>=0.3.3
