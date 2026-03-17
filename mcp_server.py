@@ -937,7 +937,7 @@ def _openneuro_try_queries(
 def _get_server_host_port() -> tuple[str, int]:
     host = os.getenv("MCP_HOST", "0.0.0.0").strip() or "0.0.0.0"
 
-    port_raw = os.getenv("MCP_PORT", os.getenv("PORT", "8005")).strip() or "8010"
+    port_raw = os.getenv("MCP_PORT", os.getenv("PORT", "8004")).strip() or "8010"
     try:
         port = int(port_raw)
     except ValueError:
@@ -2532,6 +2532,106 @@ def check_data_normality(data_source: str, column: str) -> str:
     """
     result = StatsToolkit.check_normality(data_source, column)
     return json.dumps(result)
+
+class BidsConversionRequest(BaseModel):
+    data_dir: str = Field(..., description="Path to source DICOM directory")
+    output_dir: str = Field(..., description="Path for BIDS output directory")
+
+
+@server.custom_route("/run_bids_conversion", methods=["POST"])
+@rate_limit
+async def http_run_bids_conversion(request: Request) -> JSONResponse:
+    """Run dicom2bids_agent.py as a subprocess and return structured results."""
+    import asyncio
+    import re as _re
+    try:
+        data = await request.json()
+        req = BidsConversionRequest(**data)
+        data_dir = req.data_dir
+        output_dir = req.output_dir
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid parameters: {e}")
+
+    agent_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dicom2bids_agent.py")
+    if not os.path.isfile(agent_script):
+        raise HTTPException(status_code=500, detail=f"dicom2bids_agent.py not found at {agent_script}")
+
+    t0 = time.time()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, agent_script, data_dir, output_dir,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        try:
+            stdout_bytes, _ = await asyncio.wait_for(proc.communicate(), timeout=3600)
+        except asyncio.TimeoutError:
+            proc.kill()
+            raise HTTPException(status_code=504, detail="Conversion timed out after 60 minutes")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start agent: {e}")
+
+    elapsed = round(time.time() - t0, 1)
+    console_output = stdout_bytes.decode("utf-8", errors="replace")
+
+    # Parse key metrics from stdout
+    n_nii = 0
+    n_errors = 0
+    n_warnings = 0
+    report_path = None
+    all_ok = proc.returncode == 0
+
+    m = _re.search(r"NIfTI\s+output[：:]\s*(\d+)", console_output)
+    if m:
+        n_nii = int(m.group(1))
+
+    m = _re.search(r"(\d+)\s*errors?,\s*(\d+)\s*warnings?", console_output)
+    if m:
+        n_errors = int(m.group(1))
+        n_warnings = int(m.group(2))
+
+    m = _re.search(r"HTML\s+report\s*[：:]\s*(.+)", console_output)
+    if m:
+        report_path = m.group(1).strip()
+
+    # Build progress steps from [N/7] lines
+    progress = []
+    for pm in _re.finditer(r"\[(\d+/\d+)\]\s+(.+)", console_output):
+        progress.append({"step": pm.group(1), "message": pm.group(2).strip()})
+
+    # Serve the report as a relative URL if it exists
+    report_url = None
+    if report_path and os.path.isfile(report_path):
+        report_url = f"/bids_report?path={quote_plus(report_path)}"
+
+    result = {
+        "status": "success" if all_ok else "error",
+        "data_dir": data_dir,
+        "output_dir": output_dir,
+        "n_nii": n_nii,
+        "n_errors": n_errors,
+        "n_warnings": n_warnings,
+        "elapsed_seconds": elapsed,
+        "console_output": console_output,
+        "progress": progress,
+        "report_url": report_url,
+        "return_code": proc.returncode,
+    }
+    return JSONResponse(result)
+
+
+@server.custom_route("/bids_report", methods=["GET"])
+async def http_bids_report(request: Request):
+    """Serve BIDS HTML report by absolute path."""
+    from starlette.responses import HTMLResponse
+    path = request.query_params.get("path", "")
+    if not path or not os.path.isfile(path):
+        raise HTTPException(status_code=404, detail="Report not found")
+    content = open(path, encoding="utf-8").read()
+    return HTMLResponse(content)
+
 
 @server.custom_route("/roi_figs/composite", methods=["GET"])
 async def roi_composite(request: Request):

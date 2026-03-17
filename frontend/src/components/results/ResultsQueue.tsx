@@ -7,6 +7,7 @@ import CFCWaveletCard from './CFCWaveletCard'
 import HubDetectionCard from './HubDetectionCard'
 import GrowthCurveCard from './GrowthCurveCard'
 import BoldAdjCard from './BoldAdjCard'
+import BidsConversionCard from './BidsConversionCard'
 
 interface Props {
   results: ResultItem[]
@@ -33,6 +34,8 @@ export default function ResultsQueue({ results }: Props) {
             return <GrowthCurveCard key={item.id} data={item.data} timestamp={item.timestamp} />
           case 'bold_adj':
             return <BoldAdjCard key={item.id} data={item.data} timestamp={item.timestamp} />
+          case 'bids_conversion':
+            return <BidsConversionCard key={item.id} data={item.data} timestamp={item.timestamp} />
         }
       })}
     </>

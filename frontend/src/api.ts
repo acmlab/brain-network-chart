@@ -1,4 +1,4 @@
-import type { FileInfo, CorrelationResult, GroupComparisonResult, FDRResult, OutlierResult, CFCWaveletResult, HubDetectionResult, GrowthCurveResult, BoldAdjResult } from './types';
+import type { FileInfo, CorrelationResult, GroupComparisonResult, FDRResult, OutlierResult, CFCWaveletResult, HubDetectionResult, GrowthCurveResult, BoldAdjResult, BidsConversionResult } from './types';
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -166,6 +166,15 @@ export async function visualizeBoldAdj(data_path: string, ratio?: number): Promi
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data_path, ratio }),
+  });
+  return handleResponse(res);
+}
+
+export async function runBidsConversion(data_dir: string, output_dir: string): Promise<BidsConversionResult> {
+  const res = await fetch('/run_bids_conversion', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data_dir, output_dir }),
   });
   return handleResponse(res);
 }

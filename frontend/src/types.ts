@@ -97,6 +97,20 @@ export interface GrowthCurveResult {
   overlay?: { age: number[]; values: number[] };
 }
 
+export interface BidsConversionResult {
+  status: string;
+  data_dir: string;
+  output_dir: string;
+  n_nii: number;
+  n_errors: number;
+  n_warnings: number;
+  elapsed_seconds: number;
+  console_output: string;
+  progress: { step: string; message: string }[];
+  report_url: string | null;
+  return_code: number;
+}
+
 export type ResultItem =
   | { id: string; type: 'correlation'; timestamp: string; data: CorrelationResult }
   | { id: string; type: 'group_comparison'; timestamp: string; data: GroupComparisonResult }
@@ -105,4 +119,5 @@ export type ResultItem =
   | { id: string; type: 'cfc_wavelet'; timestamp: string; data: CFCWaveletResult }
   | { id: string; type: 'hub_detection'; timestamp: string; data: HubDetectionResult }
   | { id: string; type: 'growth_curve'; timestamp: string; data: GrowthCurveResult }
-  | { id: string; type: 'bold_adj'; timestamp: string; data: BoldAdjResult };
+  | { id: string; type: 'bold_adj'; timestamp: string; data: BoldAdjResult }
+  | { id: string; type: 'bids_conversion'; timestamp: string; data: BidsConversionResult };

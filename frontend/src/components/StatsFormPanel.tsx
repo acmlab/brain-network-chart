@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { ResultItem, FileInfo } from '../types'
-import { runCorrelation, runGroupComparison, applyFDRCorrection, detectOutliers, runCFCWaveletAnalysis, runHubDetection, getGrowthCurve, runNormativeAnalysis, listFiles, visualizeBoldAdj } from '../api'
+import { runCorrelation, runGroupComparison, applyFDRCorrection, detectOutliers, runCFCWaveletAnalysis, runHubDetection, getGrowthCurve, runNormativeAnalysis, listFiles, visualizeBoldAdj, runBidsConversion } from '../api'
 
 const PHENOTYPES = [
   'Global mean of FC',
@@ -508,9 +508,49 @@ function BoldAdjForm({ onResult }: Props) {
   )
 }
 
+// ── BIDS Conversion ──────────────────────────────────────────
+function BidsConversionForm({ onResult }: Props) {
+  const [dataDir, setDataDir] = useState('')
+  const [outputDir, setOutputDir] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setLoading(true); setError('')
+    try {
+      const data = await runBidsConversion(dataDir, outputDir)
+      onResult({ id: uid(), type: 'bids_conversion', timestamp: timestamp(), data })
+    } catch (e) { setError(String(e)) }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="section">
+      <div className="section-title">DICOM → BIDS Conversion</div>
+      <div className="form-row">
+        <label className="form-label">DICOM Source Directory (server path)</label>
+        <input className="form-input" value={dataDir} onChange={e => setDataDir(e.target.value)} required placeholder="/data/ADNI_raw" />
+      </div>
+      <div className="form-row">
+        <label className="form-label">BIDS Output Directory (server path)</label>
+        <input className="form-input" value={outputDir} onChange={e => setOutputDir(e.target.value)} required placeholder="/data/bids_output" />
+      </div>
+      <div className="example-hint">
+        Auto-classifies and converts DICOM to BIDS using dicom2bids_agent; shows validation report on completion
+      </div>
+      {error && <div className="error-msg">{error}</div>}
+      <button className="btn btn-primary" type="submit" disabled={loading || !dataDir || !outputDir}>
+        {loading ? 'Converting (may take several minutes)…' : 'Start Conversion'}
+      </button>
+    </form>
+  )
+}
+
 export default function StatsFormPanel({ onResult }: Props) {
   return (
     <>
+      <BidsConversionForm onResult={onResult} />
       <BrainChartForm onResult={onResult} />
       <CFCWaveletForm onResult={onResult} />
       <HubDetectionForm onResult={onResult} />
