@@ -2580,7 +2580,6 @@ async def http_run_bids_conversion(request: Request) -> JSONResponse:
     n_nii = 0
     n_errors = 0
     n_warnings = 0
-    report_path = None
     all_ok = proc.returncode == 0
 
     m = _re.search(r"NIfTI\s+output[：:]\s*(\d+)", console_output)
@@ -2592,9 +2591,7 @@ async def http_run_bids_conversion(request: Request) -> JSONResponse:
         n_errors = int(m.group(1))
         n_warnings = int(m.group(2))
 
-    m = _re.search(r"HTML\s+report\s*[：:]\s*(.+)", console_output)
-    if m:
-        report_path = m.group(1).strip()
+    report_path = os.path.join(output_dir, "conversion_report.html")
 
     # Build progress steps from [N/7] lines
     progress = []
