@@ -1,4 +1,5 @@
-from mcp.server.fastmcp import FastMCP
+# from mcp.server.fastmcp import FastMCP
+from fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.exceptions import HTTPException
@@ -953,8 +954,8 @@ _SERVER_HOST, _SERVER_PORT = _get_server_host_port()
 
 server = FastMCP(
     'Brain Network Analysis Server',
-    host=_SERVER_HOST,
-    port=_SERVER_PORT,
+    # host=_SERVER_HOST,
+    # port=_SERVER_PORT,
 )
 
 
@@ -2655,6 +2656,19 @@ async def roi_figs(request: Request):
     return FileResponse(fp)
 
 
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+
+# Define middleware
+middleware = [
+    Middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+]
+http_app = server.http_app(middleware=middleware)
 if __name__ == "__main__":
     logger.info("="*60)
     logger.info("Brain Network Analysis MCP Server starting...")
@@ -2675,7 +2689,8 @@ if __name__ == "__main__":
     logger.info("="*60)
     
     try:
-        server.run(transport="streamable-http", mount_path='/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/brain-network-chart/uploaded_files')
+        # server.run(transport="streamable-http", mount_path='/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/brain-network-chart/uploaded_files')
+        server.run(transport="sse", host="localhost", port=8004)
     except KeyboardInterrupt:
         logger.info("Server shutdown requested")
     except Exception as e:
