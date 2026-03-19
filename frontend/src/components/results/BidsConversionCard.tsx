@@ -4,6 +4,7 @@ import type { BidsConversionResult } from '../../types'
 interface Props {
   data: BidsConversionResult
   timestamp: string
+  onComplete?: () => void
 }
 
 interface Step {
@@ -38,7 +39,7 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-export default function BidsConversionCard({ data, timestamp }: Props) {
+export default function BidsConversionCard({ data, timestamp, onComplete }: Props) {
   const [showLog, setShowLog] = useState(false)
   const [showPostProc, setShowPostProc] = useState(false)
   const [userTag, setUserTag] = useState('taowen')
@@ -59,6 +60,7 @@ export default function BidsConversionCard({ data, timestamp }: Props) {
     es.addEventListener('done', (e) => {
       setFinalData(JSON.parse((e as MessageEvent).data))
       es.close()
+      onComplete?.()
     })
     return () => es.close()
   }, [])  // eslint-disable-line react-hooks/exhaustive-deps

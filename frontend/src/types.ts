@@ -122,4 +122,4 @@ export type ResultItem =
   | { id: string; type: 'hub_detection'; timestamp: string; data: HubDetectionResult }
   | { id: string; type: 'growth_curve'; timestamp: string; data: GrowthCurveResult }
   | { id: string; type: 'bold_adj'; timestamp: string; data: BoldAdjResult }
-  | { id: string; type: 'bids_conversion'; timestamp: string; data: BidsConversionResult };
+  | { id: string; type: 'bids_conversion'; timestamp: string; data: BidsConversionResult; onComplete?: () => void };

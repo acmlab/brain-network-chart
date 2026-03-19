@@ -35,7 +35,7 @@ export default function ResultsQueue({ results }: Props) {
           case 'bold_adj':
             return <BoldAdjCard key={item.id} data={item.data} timestamp={item.timestamp} />
           case 'bids_conversion':
-            return <BidsConversionCard key={item.id} data={item.data} timestamp={item.timestamp} />
+            return <BidsConversionCard key={item.id} data={item.data} timestamp={item.timestamp} onComplete={item.onComplete} />
         }
       })}
     </>
