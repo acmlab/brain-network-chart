@@ -30,8 +30,8 @@ class DataManipulatorAgent:
             "You are a Senior Data Engineering Agent.\n"
             "Your Job: Listen to the user's request and decide how to manipulate their datasets.\n"
             "Currently, you have access to the following tools:\n"
-            "1. 'merge_datasets' (Parameters: file_paths (list of strings), output_filename (string), join_column (string))\n"
-            "   - Use 'join_column' if the user specifies a column to merge on (e.g., 'ID', 'Subject'). Provide an empty string if unknown.\n"
+            "1. 'merge_datasets' (Parameters: file_paths (list of strings), output_filename (string), join_columns (list of strings))\n"
+            "   - Use 'join_columns' if the user specifies one or more columns to merge on (e.g., ['Case', 'age']). Provide an empty list if unknown.\n"
             "You must return ONLY a JSON object."
         )
 
@@ -48,7 +48,7 @@ class DataManipulatorAgent:
             "parameters": {{
                 "file_paths": ["file_A.csv", "file_B.csv"],
                 "output_filename": "merged_output.csv",
-                "join_column": "ID"
+                "join_columns": ["ID"]
             }},
             "explanation": "Merging file A and B based on the user request."
         }}
@@ -62,7 +62,10 @@ class DataManipulatorAgent:
             # Execute the merge immediately on the backend if merge_datasets was selected
             if parsed_result.tool_to_call == "merge_datasets":
                 file_paths = parsed_result.parameters.get("file_paths", [])
-                join_column = parsed_result.parameters.get("join_column", "")
+                join_columns = parsed_result.parameters.get("join_columns", [])
+                
+                if isinstance(join_columns, str):
+                    join_columns = [join_columns] if join_columns else []
                 
                 # Robust matching: If the LLM returned nothing, but we only have 2 files in the context, just use them.
                 if not file_paths and len(raw_datasets) >= 2:
@@ -98,29 +101,32 @@ class DataManipulatorAgent:
 
                 if len(dfs) >= 2:
                     try:
-                        # Try to infer a join column
+                        # Try to infer join columns
                         potential_ids = ['ID', 'id', 'Subject', 'subject', 'RID', 'rid', 'Participant_ID', 'participant_id', 'Case', 'case']
                         
-                        valid_join_col = None
-                        if join_column and all(join_column in df.columns for df in dfs):
-                            valid_join_col = join_column
-                        else:
+                        valid_join_cols = []
+                        if join_columns:
+                            # Verify requested columns exist in ALL dataframes
+                            valid_join_cols = [col for col in join_columns if all(col in df.columns for df in dfs)]
+                        
+                        if not valid_join_cols:
+                            # Fallback to single ID inference if possible
                             for cand in potential_ids:
                                 if all(cand in df.columns for df in dfs):
-                                    valid_join_col = cand
+                                    valid_join_cols = [cand]
                                     break
                         
-                        if valid_join_col:
-                            # Merge using inner/outer join based on the column
+                        if valid_join_cols:
+                            # Merge using inner/outer join based on the columns
                             merged_df = dfs[0]
                             for df in dfs[1:]:
-                                merged_df = pd.merge(merged_df, df, on=valid_join_col, how='outer', suffixes=('', '_dup'))
+                                merged_df = pd.merge(merged_df, df, on=valid_join_cols, how='outer', suffixes=('', '_dup'))
                                 # remove duplicate columns
                                 cols_to_drop = [c for c in merged_df.columns if c.endswith('_dup')]
                                 merged_df.drop(columns=cols_to_drop, inplace=True)
                             
-                            # Move ID column to front
-                            cols = [valid_join_col] + [c for c in merged_df.columns if c != valid_join_col]
+                            # Move join columns to front
+                            cols = valid_join_cols + [c for c in merged_df.columns if c not in valid_join_cols]
                             merged_df = merged_df[cols]
                         else:
                             # Fallback: concatenate
