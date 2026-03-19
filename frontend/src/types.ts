@@ -107,8 +107,10 @@ export interface BidsConversionResult {
   elapsed_seconds: number;
   console_output: string;
   progress: { step: string; message: string }[];
-  report_url: string | null;
+  report_html: string | null;
   return_code: number;
+  pending?: boolean;
+  stream_url?: string;
 }
 
 export type ResultItem =

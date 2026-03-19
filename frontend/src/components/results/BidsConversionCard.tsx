@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { BidsConversionResult } from '../../types'
 
 interface Props {
@@ -45,8 +45,28 @@ export default function BidsConversionCard({ data, timestamp }: Props) {
   const [pathScript, setPathScript] = useState('/nas/longleaf/home/taowen/data')
   const [processDir, setProcessDir] = useState('process_output')
   const [scFcDir, setScFcDir] = useState('sc_fc_output')
+  const [liveLog, setLiveLog] = useState('')
+  const [finalData, setFinalData] = useState<BidsConversionResult | null>(null)
+  const logEndRef = useRef<HTMLDivElement>(null)
 
-  const B = data.output_dir
+  useEffect(() => {
+    if (!data.pending || !data.stream_url) return
+    const es = new EventSource(data.stream_url)
+    es.onmessage = (e) => {
+      setLiveLog(prev => prev + e.data + '\n')
+      logEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+    es.addEventListener('done', (e) => {
+      setFinalData(JSON.parse((e as MessageEvent).data))
+      es.close()
+    })
+    return () => es.close()
+  }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const d = finalData ?? data
+  const isPending = data.pending && !finalData
+
+  const B = d.output_dir
   const P = processDir
   const S = scFcDir
   const U = userTag
@@ -102,12 +122,26 @@ export default function BidsConversionCard({ data, timestamp }: Props) {
         <span className="result-card-time">{timestamp}</span>
       </div>
 
-      {/* Inline HTML report */}
-      {data.report_url
+      {/* Live log while running */}
+      {isPending && (
+        <pre style={{
+          marginTop: 8, padding: 10, borderRadius: 6,
+          background: '#0f1117', color: '#94a3b8',
+          fontSize: 10.5, lineHeight: 1.6,
+          maxHeight: 400, overflowY: 'auto',
+          whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+        }}>
+          {liveLog || 'Starting...'}
+          <div ref={logEndRef} />
+        </pre>
+      )}
+
+      {/* Inline HTML report when done */}
+      {!isPending && (d.report_html
         ? (
           <div style={{ marginTop: 8, borderRadius: 6, overflow: 'hidden', border: '1px solid #1e293b' }}>
             <iframe
-              src={data.report_url}
+              srcDoc={d.report_html}
               style={{ width: '100%', height: 560, border: 'none', background: '#fff' }}
               title="BIDS Conversion Report"
             />
@@ -115,7 +149,7 @@ export default function BidsConversionCard({ data, timestamp }: Props) {
         ) : (
           <p style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}>Report not available.</p>
         )
-      }
+      )}
 
       {/* Action buttons */}
       <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
@@ -144,7 +178,7 @@ export default function BidsConversionCard({ data, timestamp }: Props) {
           overflowX: 'auto', maxHeight: 320, overflowY: 'auto',
           whiteSpace: 'pre-wrap', wordBreak: 'break-word',
         }}>
-          {data.console_output}
+          {d.console_output || liveLog}
         </pre>
       )}
 

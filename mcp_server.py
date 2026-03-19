@@ -2631,6 +2631,69 @@ async def http_bids_report(request: Request):
     return HTMLResponse(content)
 
 
+@server.custom_route("/run_bids_conversion_stream", methods=["GET"])
+async def http_run_bids_conversion_stream(request: Request):
+    """Stream dicom2bids_agent.py stdout as SSE, then send final JSON as 'done' event."""
+    import asyncio
+    import re as _re
+    from starlette.responses import StreamingResponse
+
+    data_dir = request.query_params.get("data_dir", "")
+    output_dir = request.query_params.get("output_dir", "")
+    if not data_dir or not output_dir:
+        raise HTTPException(status_code=400, detail="data_dir and output_dir required")
+
+    agent_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dicom2bids_agent.py")
+    if not os.path.isfile(agent_script):
+        raise HTTPException(status_code=500, detail="dicom2bids_agent.py not found")
+
+    async def event_stream():
+        t0 = time.time()
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, "-u", agent_script, data_dir, output_dir,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        lines = []
+        while True:
+            line_bytes = await proc.stdout.readline()
+            if not line_bytes:
+                break
+            line = line_bytes.decode("utf-8", errors="replace").rstrip("\n")
+            lines.append(line)
+            escaped = line.replace("\n", "\\n")
+            yield f"data: {escaped}\n\n"
+
+        await proc.wait()
+        elapsed = round(time.time() - t0, 1)
+        console_output = "\n".join(lines)
+
+        n_nii = 0; n_errors = 0; n_warnings = 0
+        m = _re.search(r"NIfTI\s+output[：:]\s*(\d+)", console_output)
+        if m: n_nii = int(m.group(1))
+        m = _re.search(r"(\d+)\s*errors?,\s*(\d+)\s*warnings?", console_output)
+        if m: n_errors, n_warnings = int(m.group(1)), int(m.group(2))
+        progress = [{"step": pm.group(1), "message": pm.group(2).strip()}
+                    for pm in _re.finditer(r"\[(\d+/\d+)\]\s+(.+)", console_output)]
+
+        report_path = os.path.join(output_dir, "conversion_report.html")
+        report_html = open(report_path, encoding="utf-8").read() if os.path.isfile(report_path) else None
+
+        result = {
+            "status": "success" if proc.returncode == 0 else "error",
+            "data_dir": data_dir, "output_dir": output_dir,
+            "n_nii": n_nii, "n_errors": n_errors, "n_warnings": n_warnings,
+            "elapsed_seconds": elapsed, "console_output": console_output,
+            "progress": progress, "report_html": report_html,
+            "return_code": proc.returncode,
+        }
+        yield f"event: done\ndata: {json.dumps(result)}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+    })
+
+
 @server.custom_route("/roi_figs/composite", methods=["GET"])
 async def roi_composite(request: Request):
     ids_str = request.query_params.get("ids", "")
