@@ -35,7 +35,7 @@ MODEL_NAME = "qwen3:latest"   # 8B 通用模型，结构化输出能力强；thi
 
 # ─── 工具查找 ─────────────────────────────────────────────────────────────────
 
-_EXTRA_BIN = Path("/export_home/taowen/miniconda3/envs/brainchart_web/bin")
+_EXTRA_BIN = Path('/'.join(sys.executable.split('/')[:-1]))
 
 def find_tool(name: str) -> str | None:
     p = shutil.which(name)
