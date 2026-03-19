@@ -937,7 +937,7 @@ def _openneuro_try_queries(
 def _get_server_host_port() -> tuple[str, int]:
     host = os.getenv("MCP_HOST", "0.0.0.0").strip() or "0.0.0.0"
 
-    port_raw = os.getenv("MCP_PORT", os.getenv("PORT", "8004")).strip() or "8010"
+    port_raw = os.getenv("MCP_PORT", os.getenv("PORT", "8005")).strip() or "8010"
     try:
         port = int(port_raw)
     except ValueError:

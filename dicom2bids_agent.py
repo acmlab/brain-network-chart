@@ -1179,6 +1179,14 @@ def _badge(cls, text):
 
 def _series_row(s: dict, cache: dict[str, dict]) -> str:
     desc = s["description"]
+    if not desc:
+        badge = _badge('by', 'No SeriesDescription')
+        reason_html = '<span class="reason">(SeriesDescription missing — cannot classify)</span>'
+        return (f'<tr><td>{s["scan_num"]}</td><td><em style="color:#999">—</em></td>'
+                f'<td>{s["num_files"]}</td><td>{s["acq_type"]}</td>'
+                f'<td>{s["echo_time"]:.1f}</td><td>{s["tr"]:.1f}</td>'
+                f'<td>{badge}</td><td>{reason_html}</td></tr>')
+
     result = cache.get(desc)
     if result is None:
         dt, sfx = classify(desc)
@@ -1191,7 +1199,10 @@ def _series_row(s: dict, cache: dict[str, dict]) -> str:
         is_fallback = reason.startswith("[fallback]")
 
     if dt is None:
-        badge = _badge('bd', 'Skipped (localizer)')
+        if "derived" in reason or "auxiliary" in reason:
+            badge = _badge('bd', 'Skipped (derived/aux)')
+        else:
+            badge = _badge('bd', 'Skipped (localizer)')
     elif is_fallback:
         badge = _badge('bfb', f'{dt}/{sfx} [fallback]')
     else:
@@ -1205,14 +1216,16 @@ def _series_row(s: dict, cache: dict[str, dict]) -> str:
 
 def _pairing_rows(matched: list, no_pair: list, series_info: list[dict],
                   cache: dict[str, dict]) -> str:
-    localizer_nums = set()
+    skipped_nums: dict[str, str] = {}  # series_num -> skip kind
     for s in series_info:
         result = cache.get(s["description"])
         is_skip = (result is not None and result.get("skip")) or \
                   (result is None and classify(s["description"])[0] is None)
         if is_skip:
             first = s["scan_num"].split("/")[0].lstrip("0") or "0"
-            localizer_nums.add(first)
+            reason = result.get("reason", "") if result else ""
+            kind = "derived" if ("derived" in reason or "auxiliary" in reason) else "localizer"
+            skipped_nums[first] = kind
 
     rows = [
         f'<tr><td class="ok">{bids}</td><td>{src}</td><td>{_badge("bg","Matched")}</td></tr>'
@@ -1221,8 +1234,11 @@ def _pairing_rows(matched: list, no_pair: list, series_info: list[dict],
     for src in no_pair:
         m = re.match(r'^0*(\d+)', src)
         num = m.group(1) if m else ""
-        if num in localizer_nums:
-            label = _badge('bd', 'Localizer (skipped)')
+        if num in skipped_nums:
+            if skipped_nums[num] == "derived":
+                label = _badge('bd', 'Derived/aux (skipped)')
+            else:
+                label = _badge('bd', 'Localizer (skipped)')
         else:
             label = _badge('by', 'Unmatched (check config)')
         rows.append(f'<tr><td class="skip">—</td><td>{src}</td><td>{label}</td></tr>')
@@ -1332,7 +1348,16 @@ def generate_report(data_dir: Path, output_dir: Path, config: dict,
     status_badge = _badge('bg', '✓ All OK') if all_ok else _badge('br', '✗ Errors')
 
     n_fallback = sum(1 for v in cache.values() if v.get("reason", "").startswith("[fallback]"))
-    agent_badge = _badge('bfb', f'{n_fallback} Fallback') if n_fallback else _badge('bg', 'All Classified')
+    n_missing_desc = sum(
+        1 for _, _, series_info, _ in run_results
+        for s in series_info if not s.get("description", "").strip()
+    )
+    if n_missing_desc:
+        agent_badge = _badge('br', f'{n_missing_desc} Missing Description')
+    elif n_fallback:
+        agent_badge = _badge('bfb', f'{n_fallback} Fallback')
+    else:
+        agent_badge = _badge('bg', 'All Classified')
 
     vr = validator_result
     n_err  = sum(1 for i in vr["issues"] if i["type"] == "ERR")  if vr else None
@@ -1452,10 +1477,9 @@ async def main():
     for desc, res in cache.items():
         tag = "skip" if res.get("skip") else f"{res.get('datatype')}/{res.get('suffix')}"
         reason = res.get("reason", "")
-        if reason.startswith("[fallback]"):
-            print(f"    {desc[:50]:<50}  {tag} [FB] {reason}")
-        else:
-            print(f"    {desc[:50]:<50}  {tag}")
+        fb = " [FB]" if reason.startswith("[fallback]") else ""
+        reason_str = f"  # {reason}" if reason else ""
+        print(f"    {desc[:50]:<50}  {tag}{fb}{reason_str}")
 
     # 5. Write config.json
     config = build_config(all_series, cache)

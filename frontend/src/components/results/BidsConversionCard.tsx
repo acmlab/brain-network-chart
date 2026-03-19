@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import type { BidsConversionResult } from '../../types'
 
 interface Props {
@@ -9,6 +9,19 @@ interface Props {
 export default function BidsConversionCard({ data, timestamp }: Props) {
   const [showLog, setShowLog] = useState(false)
   const [showReport, setShowReport] = useState(false)
+  const [showPostProc, setShowPostProc] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [processDir, setProcessDir] = useState('process_output')
+  const [scFcDir, setScFcDir] = useState('sc_fc_output')
+  const cmdRef = useRef<HTMLPreElement>(null)
+
+  const postProcCmd = `bash process.sh ${data.output_dir} ${processDir} ${scFcDir}`
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(postProcCmd)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
 
   const success = data.n_errors === 0
   const statusColor = success ? '#4ade80' : '#f87171'
@@ -87,7 +100,7 @@ export default function BidsConversionCard({ data, timestamp }: Props) {
       )}
 
       {/* Action buttons */}
-      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+      <div style={{ display: 'flex', gap: 8, marginTop: 14, flexWrap: 'wrap' }}>
         {data.report_url && (
           <button
             className="btn-secondary"
@@ -104,7 +117,72 @@ export default function BidsConversionCard({ data, timestamp }: Props) {
         >
           {showLog ? 'Collapse Log' : 'View Conversion Log'}
         </button>
+        <button
+          className="btn-secondary"
+          style={{ fontSize: 12, padding: '4px 12px' }}
+          onClick={() => setShowPostProc(p => !p)}
+        >
+          {showPostProc ? 'Collapse Post-processing' : 'Post-processing Command'}
+        </button>
       </div>
+
+      {/* Post-processing command panel */}
+      {showPostProc && (
+        <div style={{
+          marginTop: 12, padding: 12, borderRadius: 6,
+          background: '#0f1117', border: '1px solid #1e293b',
+        }}>
+          <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 8, fontWeight: 600 }}>
+            Post-processing Command (process.sh)
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+            <label style={{ fontSize: 11, color: '#64748b', display: 'flex', alignItems: 'center', gap: 4 }}>
+              Process Dir:
+              <input
+                value={processDir}
+                onChange={e => setProcessDir(e.target.value)}
+                style={{
+                  fontSize: 11, padding: '2px 6px', borderRadius: 4,
+                  background: '#1e293b', border: '1px solid #334155',
+                  color: '#e2e8f0', marginLeft: 4, width: 160,
+                }}
+              />
+            </label>
+            <label style={{ fontSize: 11, color: '#64748b', display: 'flex', alignItems: 'center', gap: 4 }}>
+              SC-FC Dir:
+              <input
+                value={scFcDir}
+                onChange={e => setScFcDir(e.target.value)}
+                style={{
+                  fontSize: 11, padding: '2px 6px', borderRadius: 4,
+                  background: '#1e293b', border: '1px solid #334155',
+                  color: '#e2e8f0', marginLeft: 4, width: 160,
+                }}
+              />
+            </label>
+          </div>
+          <pre ref={cmdRef} style={{
+            padding: '8px 10px', borderRadius: 4,
+            background: '#0a0d14', color: '#7dd3fc',
+            fontSize: 11, lineHeight: 1.6, margin: 0,
+            whiteSpace: 'pre-wrap', wordBreak: 'break-all',
+          }}>
+            {postProcCmd}
+          </pre>
+          <button
+            onClick={handleCopy}
+            style={{
+              marginTop: 8, fontSize: 11, padding: '3px 10px',
+              borderRadius: 4, border: '1px solid #334155',
+              background: copied ? '#14532d' : '#1e293b',
+              color: copied ? '#4ade80' : '#94a3b8',
+              cursor: 'pointer',
+            }}
+          >
+            {copied ? '✓ Copied' : 'Copy'}
+          </button>
+        </div>
+      )}
 
       {/* Embedded HTML report */}
       {showReport && data.report_url && (
