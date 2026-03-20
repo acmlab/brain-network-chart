@@ -1,0 +1,32 @@
+# Core scientific stack
+numpy>=1.24.0
+scipy>=1.11.0
+scikit-image>=0.21.0
+
+# Medical imaging I/O
+nibabel>=5.0.0
+
+# Image processing & visualization
+pillow>=10.0.0
+matplotlib>=3.7.0
+opencv-python-headless>=4.8.0
+
+# UI
+gradio>=4.0.0
+
+# Config & utilities
+pyyaml>=6.0
+python-dotenv>=1.0.0
+tqdm>=4.65.0
+loguru>=0.7.0
+pandas>=2.0.0
+
+# Deep learning (assumed installed in environment)
+# torch>=2.0.0  -- already in env
+# torchvision>=0.15.0  -- already in env
+
+# Metrics
+# medpy>=0.4.0  -- optional, for HD95; falls back to scipy if unavailable
+
+# Optional: for DICOM support
+# pydicom>=2.4.0

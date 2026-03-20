@@ -1,0 +1,28 @@
+{
+  "case_id": "demo_volume",
+  "volume_path": "output/demo_volume.nii.gz",
+  "organ": "right kidney",
+  "axis": 0,
+  "volume_shape": [
+    128,
+    128,
+    60
+  ],
+  "has_gt": true,
+  "started_at": "2026-03-19T22:21:41.116364",
+  "events": [
+    {
+      "type": "inference",
+      "timestamp": "2026-03-19T22:21:41.117706",
+      "slice_idx": 30,
+      "mask_area": 701,
+      "confidence": 0.85
+    },
+    {
+      "type": "propagation",
+      "timestamp": "2026-03-19T22:21:41.129855",
+      "elapsed_sec": 0.01,
+      "total_fg_voxels": 92522
+    }
+  ]
+}

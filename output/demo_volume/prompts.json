@@ -1,0 +1,35 @@
+{
+  "organ": "right kidney",
+  "axis": 0,
+  "prompts": [
+    {
+      "slice_idx": 30,
+      "axis": 0,
+      "prompt_type": "box",
+      "meta": {
+        "organ": "right kidney",
+        "timestamp": "2026-03-19T22:21:41.117267"
+      },
+      "box": [
+        40.0,
+        40.0,
+        90.0,
+        90.0
+      ]
+    }
+  ],
+  "history": [
+    {
+      "timestamp": "2026-03-19T22:21:41.117287",
+      "action": "add_box",
+      "slice_idx": 30,
+      "box": [
+        40.0,
+        40.0,
+        90.0,
+        90.0
+      ],
+      "axis": 0
+    }
+  ]
+}

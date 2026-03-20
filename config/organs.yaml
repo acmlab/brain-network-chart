@@ -1,0 +1,89 @@
+# ─── Organ Metadata ────────────────────────────────────────────────────────
+# Defines display properties, typical MR/CT window settings,
+# and expected anatomical positions (rough prior for bbox initialization).
+
+organs:
+  right_kidney:
+    display_name: "Right Kidney"
+    aliases: ["right kidney", "right_kidney", "kidney_right"]
+    modality: mr
+    intensity_window:
+      method: percentile
+      low: 1.0
+      high: 99.0
+    # Rough axial slice range as fraction of total slices [start, end]
+    typical_axial_range: [0.3, 0.7]
+    color: [255, 140, 0]    # orange (RGB)
+    label_value: 1
+
+  left_kidney:
+    display_name: "Left Kidney"
+    aliases: ["left kidney", "left_kidney", "kidney_left"]
+    modality: mr
+    intensity_window:
+      method: percentile
+      low: 1.0
+      high: 99.0
+    typical_axial_range: [0.3, 0.7]
+    color: [255, 165, 0]    # orange variant
+    label_value: 2
+
+  heart:
+    display_name: "Heart"
+    aliases: ["heart", "cardiac"]
+    modality: mr
+    intensity_window:
+      method: percentile
+      low: 1.0
+      high: 99.0
+    typical_axial_range: [0.2, 0.6]
+    color: [220, 20, 60]    # crimson
+    label_value: 3
+
+  myocardium:
+    display_name: "Myocardium"
+    aliases: ["myocardium", "myocard", "myo"]
+    modality: mr
+    intensity_window:
+      method: percentile
+      low: 1.0
+      high: 99.0
+    typical_axial_range: [0.2, 0.6]
+    color: [255, 69, 0]     # red-orange
+    label_value: 4
+
+  liver:
+    display_name: "Liver"
+    aliases: ["liver"]
+    modality: ct
+    intensity_window:
+      method: window
+      center: 60
+      width: 160
+    typical_axial_range: [0.25, 0.6]
+    color: [139, 90, 43]    # brown
+    label_value: 5
+
+  spleen:
+    display_name: "Spleen"
+    aliases: ["spleen"]
+    modality: ct
+    intensity_window:
+      method: window
+      center: 60
+      width: 160
+    typical_axial_range: [0.3, 0.6]
+    color: [128, 0, 128]    # purple
+    label_value: 6
+
+  custom:
+    display_name: "Custom"
+    aliases: ["custom", "other"]
+    modality: mr
+    intensity_window:
+      method: percentile
+      low: 1.0
+      high: 99.0
+    typical_axial_range: [0.0, 1.0]
+    color: [0, 200, 200]    # cyan
+    label_value: 7

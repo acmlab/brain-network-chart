@@ -1,0 +1,103 @@
+# ─── MedSAM Agent — Default Configuration ────────────────────────────────────
+# All values here are defaults. Override via environment variables or .env file.
+
+model:
+  # Backend adapter to use: "medsam" | "medsam2" | "sam" | "mock"
+  backend: medsam
+  # Absolute path to checkpoint; overridden by MEDSAM_CHECKPOINT env var
+  checkpoint: /ram/USERS/zhuoyu73/Andy/MedSAM_COPY/work_dir/MedSAM/medsam_vit_b.pth
+  # SAM model type: vit_b | vit_l | vit_h
+  sam_model_type: vit_b
+  # Path to segment_anything source (if not installed as package)
+  segment_anything_path: /ram/USERS/zhuoyu73/Andy/MedSAM_COPY
+  # Inference device
+  device: cuda
+  # Image size expected by model (height, width)
+  image_size: [1024, 1024]
+  # ── MedSAM2 settings ───────────────────────────────────────────────────────
+  # Root directory of the MedSAM2 source repo (bowang-lab/MedSAM2)
+  medsam2_repo_path: /ram/USERS/zhuoyu73/Andy/MedSAM2
+  # Path to MedSAM2 checkpoint (.pt file)
+  medsam2_checkpoint: /ram/USERS/zhuoyu73/Andy/MedSAM2/checkpoints/MedSAM2_latest.pt
+  # Hydra config file (relative to MedSAM2's sam2/ package)
+  medsam2_config: configs/sam2.1_hiera_t512.yaml
+
+data:
+  root: /proj/data
+  kidney_dir: /proj/data/UKB_KidneyMRI_ShMOLLI
+  heart_dir: /proj/data/UKB_HeartMRI_ShMOLLI
+  # Supported file extensions
+  nifti_exts: [".nii", ".nii.gz"]
+  # Intensity windowing per modality (can be overridden per case)
+  intensity:
+    # MR: percentile-based normalization
+    mr:
+      method: percentile
+      low: 1.0
+      high: 99.0
+    # CT: Hounsfield unit windowing
+    ct:
+      method: window
+      center: 40
+      width: 400
+
+propagation:
+  # Strategy: "interpolate" | "sam_guided" | "nearest"
+  strategy: sam_guided
+  # For interpolate: thresholding level on interpolated probability maps
+  interp_threshold: 0.5
+  # For sam_guided: expand prompted bbox by this fraction when propagating to adjacent slices
+  bbox_expand_ratio: 0.05
+  # Maximum gap (in slices) to bridge without a prompt before warning
+  max_gap: 30
+  # Whether to propagate backward (towards slice 0) from first prompted slice
+  propagate_backward: true
+  # Whether to propagate forward from last prompted slice
+  propagate_forward: true
+
+output:
+  base_dir: /ram/USERS/zhuoyu73/Andy/medsam/output
+  # Sub-directories created per case
+  save_mask: true
+  save_overlay: true
+  save_prompts: true
+  save_metrics: true        # only if GT provided
+  save_intermediates: true  # per-slice debug overlays
+  overlay_alpha: 0.4
+  overlay_color: [255, 215, 0]   # gold (RGB) for mask overlay
+
+ui:
+  port: 7860
+  share: false
+  # Number of slices shown in the multi-slice overview panel
+  overview_cols: 4
+  # Default axis: 0=axial, 1=coronal, 2=sagittal
+  default_axis: 0
+
+evaluation:
+  enabled: true     # Automatically disabled when no GT is provided
+  metrics:
+    - dice
+    - iou
+    - precision
+    - recall
+    - hd95          # Falls back gracefully if medpy not installed
+    - volume_diff
+
+logging:
+  level: INFO
+  # Log file is written inside each case output directory
+  log_filename: medsam_agent.log
+
+agent:
+  # Minimum number of prompted slices before triggering volume propagation
+  min_prompts_for_propagation: 1
+  # Target organs available in UI
+  default_organs:
+    - right kidney
+    - left kidney
+    - heart
+    - myocardium
+    - liver
+    - spleen
+    - custom
