@@ -75,7 +75,15 @@ class DataManipulatorAgent:
 
                 # Fetch data from the provided raw_datasets mapped from the frontend
                 dfs = []
+                seen_keys = set()
+                
+                # Pre-filter file_paths to prevent LLM hallucinating the same file twice
+                unique_fps = []
                 for fp in file_paths:
+                    if fp not in unique_fps:
+                        unique_fps.append(fp)
+
+                for fp in unique_fps:
                     matched_key = None
                     # Exact match
                     if fp in raw_datasets:
@@ -87,52 +95,88 @@ class DataManipulatorAgent:
                                 matched_key = raw_k
                                 break
                     
-                    if matched_key:
+                    if matched_key and matched_key not in seen_keys:
                         # Convert frontend dict records back to pandas dataframe
                         df = pd.DataFrame(raw_datasets[matched_key])
                         dfs.append(df)
-                    else:
+                        seen_keys.add(matched_key)
+                    elif not matched_key:
                         parsed_result.explanation += f" (Warning: File '{fp}' not found in uploaded dataset context)"
                 
-                # Fallback: if we still didn't find at least 2 datasets, but the context has exactly 2, just use them.
-                if len(dfs) < 2 and len(raw_datasets) == 2:
-                    dfs = [pd.DataFrame(data) for data in raw_datasets.values()]
-                    parsed_result.explanation += " (Fallback: Merged all available files because specific matches failed.)"
+                # Fallback: if we still didn't find at least 2 datasets, but the context has 2+ files, just grab the first two.
+                if len(dfs) < 2 and len(raw_datasets) >= 2:
+                    dfs = []
+                    for k, data in list(raw_datasets.items())[:2]:
+                        dfs.append(pd.DataFrame(data))
+                    parsed_result.explanation += " (Fallback: Merged available files because specific matches failed.)"
 
                 if len(dfs) >= 2:
                     try:
-                        # Try to infer join columns
-                        potential_ids = ['ID', 'id', 'Subject', 'subject', 'RID', 'rid', 'Participant_ID', 'participant_id', 'Case', 'case']
-                        
-                        valid_join_cols = []
+                        # Helper to find a fuzzy column match in a dataframe
+                        def find_col(df, query_col):
+                            if query_col in df.columns:
+                                return query_col
+                            # Fuzzy check: case insensitive or substring
+                            for c in df.columns:
+                                if query_col.lower() == c.lower() or query_col.lower() in c.lower() or c.lower() in query_col.lower():
+                                    return c
+                            return None
+
+                        # Match join_columns for each dataframe independently
+                        df_join_keys = [[] for _ in dfs]
+                        valid_merge = False
+
                         if join_columns:
-                            # Verify requested columns exist in ALL dataframes
-                            valid_join_cols = [col for col in join_columns if all(col in df.columns for df in dfs)]
+                            valid_merge = True
+                            for req_col in join_columns:
+                                for i, df in enumerate(dfs):
+                                    matched_col = find_col(df, req_col)
+                                    if matched_col:
+                                        df_join_keys[i].append(matched_col)
+                                    else:
+                                        valid_merge = False # Missing column in at least one DF
                         
-                        if not valid_join_cols:
-                            # Fallback to single ID inference if possible
-                            for cand in potential_ids:
-                                if all(cand in df.columns for df in dfs):
-                                    valid_join_cols = [cand]
-                                    break
-                        
-                        if valid_join_cols:
-                            # Merge using inner/outer join based on the columns
-                            merged_df = dfs[0]
+                        # The Universal Fix: Dynamic Intersection
+                        # If no explicit join_columns were provided or they failed, find the exact intersection of all columns.
+                        if not valid_merge:
+                            # Find common columns across all dataframes (case-insensitive intersection)
+                            common_cols_lower = set(col.lower() for col in dfs[0].columns)
                             for df in dfs[1:]:
-                                merged_df = pd.merge(merged_df, df, on=valid_join_cols, how='outer', suffixes=('', '_dup'))
-                                # remove duplicate columns
-                                cols_to_drop = [c for c in merged_df.columns if c.endswith('_dup')]
-                                merged_df.drop(columns=cols_to_drop, inplace=True)
+                                common_cols_lower = common_cols_lower.intersection(set(col.lower() for col in df.columns))
+                            
+                            if common_cols_lower:
+                                valid_merge = True
+                                df_join_keys = [[] for _ in dfs]
+                                # Map the lowercased common columns back to their original case for each dataframe
+                                for c_lower in common_cols_lower:
+                                    for i, df in enumerate(dfs):
+                                        for orig_col in df.columns:
+                                            if orig_col.lower() == c_lower:
+                                                df_join_keys[i].append(orig_col)
+                                                break
+                        
+                        if valid_merge:
+                            merged_df = dfs[0]
+                            left_keys = df_join_keys[0]
+                            
+                            for i, df in enumerate(dfs[1:], start=1):
+                                right_keys = df_join_keys[i]
+                                
+                                # Perform merge mapping left keys to right keys
+                                merged_df = pd.merge(merged_df, df, left_on=left_keys, right_on=right_keys, how='outer', suffixes=('', f'_file{i+1}'))
+                                
+                                # If the right keys had a different name than the left keys, drop the redundant right key column
+                                for l_key, r_key in zip(left_keys, right_keys):
+                                    if l_key != r_key and r_key in merged_df.columns:
+                                        merged_df.drop(columns=[r_key], inplace=True)
                             
                             # Move join columns to front
-                            cols = valid_join_cols + [c for c in merged_df.columns if c not in valid_join_cols]
+                            cols = left_keys + [c for c in merged_df.columns if c not in left_keys]
                             merged_df = merged_df[cols]
                         else:
-                            # Fallback: concatenate
-                            merged_df = pd.concat(dfs, axis=1)
-                            # Remove duplicate columns if they arose from concat
-                            merged_df = merged_df.loc[:, ~merged_df.columns.duplicated()]
+                            # If absolutely no columns match, attempting to concat horizontally is dangerous for medical data
+                            # because it assumes perfect row alignment. We will reject the merge to prevent silent data corruption.
+                            raise ValueError("Cannot merge datasets: No common columns found to join on, and horizontal concatenation is unsafe.")
                         
                         # Convert back to CSV string to send to frontend (na_rep outputs empty string for NaNs)
                         parsed_result.merged_csv_data = merged_df.to_csv(index=False, na_rep="")
