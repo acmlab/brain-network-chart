@@ -1,0 +1,45 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    volumes:
+      - ${DATA_OUTPUT_PATH:-./output}:/data/output
+    environment:
+      - MCP_HOST=0.0.0.0
+      - MCP_PORT=8005
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  bids-runner:
+    build:
+      context: ../../bids
+      dockerfile: ../brain-network-chart/docker/Dockerfile.bids
+    ports:
+      - "7789:7789"
+    volumes:
+      - ../bids_local_agent.py:/app/bids_local_agent.py:ro
+      - ${DATA_INPUT_PATH:-./input}:/data/input
+      - ${DATA_OUTPUT_PATH:-./output}:/data/output
+      - ${FS_LICENSE_PATH:-/dev/null}:/fs_license/license.txt:ro
+      # Linux / Mac:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Windows (Docker Desktop): comment above, uncomment below:
+      # - //./pipe/docker_engine://./pipe/docker_engine
+      - bids_scratch:/scratch
+    environment:
+      - USER_TAG=${USER_TAG:-user}
+      - FS_LICENSE=/fs_license/license.txt
+    restart: unless-stopped
+
+volumes:
+  bids_scratch:

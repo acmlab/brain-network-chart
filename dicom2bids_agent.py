@@ -15,6 +15,13 @@ from __future__ import annotations
 import sys, os, json, re, subprocess, shutil, asyncio
 from pathlib import Path
 from datetime import datetime
+
+# Force UTF-8 output on Windows (avoids UnicodeEncodeError for → ✓ etc.)
+if sys.stdout.encoding and sys.stdout.encoding.lower() not in ('utf-8', 'utf8'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if sys.stderr.encoding and sys.stderr.encoding.lower() not in ('utf-8', 'utf8'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 import httpx
 
 # ─── 路径配置 ─────────────────────────────────────────────────────────────────
@@ -547,7 +554,12 @@ async def discover_dataset_layout(data_dir: Path, http: httpx.AsyncClient) -> di
                 # since the agent often returns overly specific patterns.
                 if result.get("modality_grouped"):
                     top_dirs = [d for d in data_dir.iterdir() if d.is_dir()]
-                    if len(top_dirs) >= 2:
+                    if len(top_dirs) < 2:
+                        # Only one top-level dir: impossible to have multiple modality groups
+                        result["modality_grouped"] = False
+                        result["subject_glob"] = "*"
+                        print("  [layout correction] only 1 top-level dir → subject_toplevel")
+                    elif len(top_dirs) >= 2:
                         found_shared = False
                         for test_sg in ["*", "*/*"]:
                             ids_a = {m.name for m in top_dirs[0].glob(test_sg) if m.is_dir()}
@@ -1421,9 +1433,9 @@ async def main():
     dcm2bids = find_tool("dcm2bids")
     dcm2niix = find_tool("dcm2niix")
     if not dcm2bids:
-        sys.exit("✗ dcm2bids not found; please install or activate brainchart_web env")
+        sys.exit("✗ dcm2bids not found; please run install.sh first")
     if not dcm2niix:
-        sys.exit("✗ dcm2niix not found")
+        sys.exit("✗ dcm2niix not found; please run install.sh first")
     print(f"  dcm2bids     : {dcm2bids}")
     print(f"  dcm2niix     : {dcm2niix}")
     _npx = shutil.which("npx")
@@ -1432,7 +1444,7 @@ async def main():
     try:
         import pydicom
     except ImportError:
-        sys.exit("✗ pydicom not found; please: pip install pydicom")
+        sys.exit("✗ pydicom not found; please run install.sh first")
 
     # 2. Discover dataset layout + subjects
     print(f"\n[2/7] Analyzing dataset structure: {DATA_DIR}")

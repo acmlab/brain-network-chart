@@ -24,7 +24,12 @@ export default defineConfig({
       '/visualize_bold_adj': 'http://127.0.0.1:8005',
       '/get_phenotypes': 'http://127.0.0.1:8005',
       '/run_bids_conversion': 'http://127.0.0.1:8005',
+      '/run_bids_conversion_stream': 'http://127.0.0.1:8005',
       '/bids_report': 'http://127.0.0.1:8005',
+      '/run_command_stream': 'http://127.0.0.1:8005',
+      '/health': 'http://127.0.0.1:8005',
+      '/sse': 'http://127.0.0.1:8005',
+      '/messages': 'http://127.0.0.1:8005',
     },
   },
 })

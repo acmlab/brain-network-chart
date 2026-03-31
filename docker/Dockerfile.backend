@@ -1,0 +1,47 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# System dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    dcm2niix \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir \
+    "duckduckgo-search>=8.1.1" \
+    "h5py>=3.10.0" \
+    "mcp>=1.0.0" \
+    "numpy>=1.26.0" \
+    "pandas>=2.0.0" \
+    "pydantic>=2.0.0" \
+    "pydantic-ai>=1.51.0" \
+    "scipy>=1.11.0" \
+    "statsmodels" \
+    "ollama" \
+    "fastapi" \
+    "uvicorn" \
+    "python-multipart>=0.0.9" \
+    "requests>=2.31.0" \
+    "starlette>=0.37.0" \
+    "pillow>=10.0" \
+    "httpx" \
+    "pydicom" \
+    "dcm2bids"
+
+# Copy backend source
+COPY *.py ./
+COPY schema.json ./
+
+# Data directories (mounted as volumes at runtime)
+RUN mkdir -p /data/uploaded_files /data/bids_output
+
+ENV MCP_HOST=0.0.0.0
+ENV MCP_PORT=8005
+ENV UPLOADED_FILES_DIR=/data/uploaded_files
+ENV BIDS_OUTPUT_DIR=/data/bids_output
+
+EXPOSE 8005
+CMD ["python", "mcp_server.py"]

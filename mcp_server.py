@@ -1,5 +1,5 @@
 # from mcp.server.fastmcp import FastMCP
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.exceptions import HTTPException
@@ -2694,6 +2694,44 @@ async def http_run_bids_conversion_stream(request: Request):
     })
 
 
+@server.custom_route("/run_command_stream", methods=["GET"])
+async def http_run_command_stream(request: Request):
+    """Run an arbitrary shell command on the server and stream stdout as SSE.
+    Query params: cmd (shell command string), cwd (working directory, optional).
+    Events: data lines, then 'done' with {exit_code}.
+    """
+    import asyncio
+    from starlette.responses import StreamingResponse
+
+    cmd = request.query_params.get("cmd", "").strip()
+    cwd = request.query_params.get("cwd", "").strip() or None
+    if not cmd:
+        raise HTTPException(status_code=400, detail="cmd required")
+    if cwd and not os.path.isdir(cwd):
+        cwd = None  # ignore invalid cwd, run from server's working directory
+
+    async def event_stream():
+        proc = await asyncio.create_subprocess_shell(
+            cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            cwd=cwd,
+        )
+        while True:
+            line_bytes = await proc.stdout.readline()
+            if not line_bytes:
+                break
+            line = line_bytes.decode("utf-8", errors="replace").rstrip("\n")
+            escaped = line.replace("\n", "\\n")
+            yield f"data: {escaped}\n\n"
+        await proc.wait()
+        yield f"event: done\ndata: {json.dumps({'exit_code': proc.returncode})}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+    })
+
+
 @server.custom_route("/roi_figs/composite", methods=["GET"])
 async def roi_composite(request: Request):
     ids_str = request.query_params.get("ids", "")
@@ -2716,19 +2754,52 @@ async def roi_figs(request: Request):
     return FileResponse(fp)
 
 
-from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
+from starlette.applications import Starlette
+from starlette.routing import Mount
+from starlette.staticfiles import StaticFiles
 
-# Define middleware
-middleware = [
-    Middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-]
-http_app = server.http_app(middleware=middleware)
+# Build SSE app and wrap with CORS middleware
+_sse_app = server.sse_app()
+_cors_app = CORSMiddleware(
+    _sse_app,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Serve built frontend static files if present (no-Docker / no-nginx mode)
+_frontend_dist = os.path.join(os.path.dirname(__file__), "frontend", "dist")
+if os.path.isdir(_frontend_dist):
+    http_app = Starlette(routes=[
+        Mount("/", app=_cors_app),
+    ])
+    # Mount static files at root AFTER API routes (Starlette picks first match)
+    # Use a simple ASGI middleware approach: API first, then static fallback
+    from starlette.responses import FileResponse
+
+    class _FrontendFallback:
+        """Serve API via _cors_app, fall back to frontend/dist for everything else."""
+        def __init__(self, api_app, static_dir):
+            self._api = api_app
+            self._static = StaticFiles(directory=static_dir, html=True)
+
+        async def __call__(self, scope, receive, send):
+            path = scope.get("path", "/")
+            # API paths — delegate to MCP/SSE app
+            api_prefixes = (
+                "/run_", "/get_", "/upload", "/list_files", "/delete_file",
+                "/apply_", "/detect_", "/parse_", "/roi_", "/visualize_",
+                "/bids_", "/sse", "/health", "/messages",
+            )
+            if any(path.startswith(p) for p in api_prefixes):
+                await self._api(scope, receive, send)
+            else:
+                await self._static(scope, receive, send)
+
+    http_app = _FrontendFallback(_cors_app, _frontend_dist)
+else:
+    http_app = _cors_app
 if __name__ == "__main__":
     logger.info("="*60)
     logger.info("Brain Network Analysis MCP Server starting...")
@@ -2749,8 +2820,8 @@ if __name__ == "__main__":
     logger.info("="*60)
     
     try:
-        # server.run(transport="streamable-http", mount_path='/ram/USERS/tao/code/gift/BrainChart-FC-Lifespan/brain_network_app/brain-network-chart/uploaded_files')
-        server.run(transport="sse", host="localhost", port=8004)
+        import uvicorn
+        uvicorn.run(http_app, host=_SERVER_HOST, port=_SERVER_PORT)
     except KeyboardInterrupt:
         logger.info("Server shutdown requested")
     except Exception as e:

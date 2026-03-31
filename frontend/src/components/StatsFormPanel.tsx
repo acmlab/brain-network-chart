@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import type { ResultItem, FileInfo } from '../types'
 import { runCorrelation, runGroupComparison, applyFDRCorrection, detectOutliers, runCFCWaveletAnalysis, runHubDetection, getGrowthCurve, runNormativeAnalysis, listFiles, visualizeBoldAdj, } from '../api'
+import { LOCAL_AGENT_URL } from '../constants'
 
 const PHENOTYPES = [
   'Global mean of FC',
@@ -509,11 +510,32 @@ function BoldAdjForm({ onResult }: Props) {
 }
 
 // ── BIDS Conversion ──────────────────────────────────────────
+
 function BidsConversionForm({ onResult }: Props) {
   const [dataDir, setDataDir] = useState('')
   const [outputDir, setOutputDir] = useState('')
+  const [runMode, setRunMode] = useState<'local' | 'server'>('local')
+  const [localAgentOnline, setLocalAgentOnline] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    async function check() {
+      try {
+        const ctrl = new AbortController()
+        const t = setTimeout(() => ctrl.abort(), 2000)
+        const r = await fetch(`${LOCAL_AGENT_URL}/health`, { signal: ctrl.signal })
+        clearTimeout(t)
+        if (!cancelled) setLocalAgentOnline(r.ok)
+      } catch {
+        if (!cancelled) setLocalAgentOnline(false)
+      }
+    }
+    check()
+    const id = setInterval(check, 3000)
+    return () => { cancelled = true; clearInterval(id) }
+  }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -526,6 +548,7 @@ function BidsConversionForm({ onResult }: Props) {
         n_nii: 0, n_errors: 0, n_warnings: 0, elapsed_seconds: 0,
         console_output: '', progress: [], report_html: null, return_code: -1,
         pending: true, stream_url: `/run_bids_conversion_stream?${params}`,
+        run_mode: runMode,
       },
       onComplete: () => setLoading(false),
     })
@@ -535,19 +558,43 @@ function BidsConversionForm({ onResult }: Props) {
     <form onSubmit={handleSubmit} className="section">
       <div className="section-title">DICOM → BIDS Conversion</div>
       <div className="form-row">
-        <label className="form-label">DICOM Source Directory (server path)</label>
+        <label className="form-label">DICOM Source Directory</label>
         <input className="form-input" value={dataDir} onChange={e => setDataDir(e.target.value)} required placeholder="/data/ADNI_raw" />
       </div>
       <div className="form-row">
-        <label className="form-label">BIDS Output Directory (server path)</label>
+        <label className="form-label">BIDS Output Directory</label>
         <input className="form-input" value={outputDir} onChange={e => setOutputDir(e.target.value)} required placeholder="/data/bids_output" />
       </div>
-      <div className="example-hint">
-        Auto-classifies and converts DICOM to BIDS using dicom2bids_agent; shows validation report on completion
+      <div className="form-row">
+        <label className="form-label">Run on</label>
+        <div style={{ display: 'flex', gap: 16, alignItems: 'center', marginTop: 4 }}>
+          {(['local', 'server'] as const).map(m => (
+            <label key={m} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, cursor: 'pointer', color: '#94a3b8' }}>
+              <input
+                type="radio"
+                name="run_mode"
+                value={m}
+                checked={runMode === m}
+                onChange={() => setRunMode(m)}
+                style={{ accentColor: '#818cf8' }}
+              />
+              {m === 'local' ? 'Local agent' : 'Server'}
+              {m === 'local' && (
+                <span style={{
+                  display: 'inline-block', width: 7, height: 7, borderRadius: '50%', marginLeft: 2,
+                  background: localAgentOnline ? '#4ade80' : '#ef4444',
+                }} title={localAgentOnline ? 'Online' : 'Offline'} />
+              )}
+            </label>
+          ))}
+        </div>
       </div>
       {error && <div className="error-msg">{error}</div>}
-      <button className="btn btn-primary" type="submit" disabled={loading || !dataDir || !outputDir}>
-        {loading ? 'Converting (may take several minutes)…' : 'Start Conversion'}
+      <button className="btn btn-primary" type="submit"
+        disabled={loading || !dataDir || !outputDir || (runMode === 'local' && !localAgentOnline)}>
+        {loading ? 'Converting (may take several minutes)…'
+          : (runMode === 'local' && !localAgentOnline) ? 'Local agent offline'
+          : 'Start Conversion'}
       </button>
     </form>
   )

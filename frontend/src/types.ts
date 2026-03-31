@@ -111,6 +111,7 @@ export interface BidsConversionResult {
   return_code: number;
   pending?: boolean;
   stream_url?: string;
+  run_mode?: 'local' | 'server';
 }
 
 export type ResultItem =
