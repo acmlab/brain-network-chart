@@ -22,7 +22,7 @@ services:
 
   bids-runner:
     build:
-      context: ../../bids
+      context: /ram/USERS/tao/code/new/bids
       dockerfile: ../brain-network-chart/docker/Dockerfile.bids
     ports:
       - "7789:7789"

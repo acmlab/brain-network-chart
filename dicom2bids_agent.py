@@ -38,7 +38,7 @@ OLLAMA_HOSTS = [
     "localhost:11434",
     "yukon.acm.unc.edu:11434",
 ]
-MODEL_NAME = "qwen3:latest"   # 8B 通用模型，结构化输出能力强；think=False 避免 token 超限
+MODEL_NAME = os.environ.get("DICOM2BIDS_MODEL", "qwen3:latest")
 
 # ─── 工具查找 ─────────────────────────────────────────────────────────────────
 
