@@ -52,6 +52,20 @@ from fastapi.middleware.cors import CORSMiddleware
 
 
 from stats_tools import StatsToolkit
+try:
+    from civet_skills import (
+        inspect_civet_folder,
+        load_cortical_thickness_map,
+        run_civet_qc_check,
+        visualize_civet_surface,
+    )
+except ImportError:
+    from mcp_server.civet_skills import (
+        inspect_civet_folder,
+        load_cortical_thickness_map,
+        run_civet_qc_check,
+        visualize_civet_surface,
+    )
 
 def _get_server_host_port() -> tuple[str, int]:
     host = os.getenv("MCP_HOST", "0.0.0.0").strip() or "0.0.0.0"
@@ -135,6 +149,21 @@ class InternetSearchRequest(BaseModel):
     max_results: int = Field(10, ge=1, le=50, description="Max results (1-50)")
     from_year: Optional[int] = Field(None, ge=1800, le=2100, description="Filter from publication year (inclusive)")
     to_year: Optional[int] = Field(None, ge=1800, le=2100, description="Filter to publication year (inclusive)")
+
+class InspectCivetFolderRequest(BaseModel):
+    subject_dir: str = Field(..., description="Path to a CIVET subject output folder")
+
+class RunCivetQcCheckRequest(BaseModel):
+    qc_file: str = Field(..., description="Path to a CIVET QC CSV, TSV, or whitespace table")
+    subject_id: Optional[str] = Field(None, description="Optional subject identifier to select one QC row")
+
+class LoadCorticalThicknessMapRequest(BaseModel):
+    thickness_file: str = Field(..., description="Path to a text file containing cortical thickness values")
+
+class VisualizeCivetSurfaceRequest(BaseModel):
+    surface_path: str = Field(..., description="Path to a CIVET OBJ surface file")
+    overlay_path: Optional[str] = Field(None, description="Optional path to vertex-wise overlay values")
+    output_dir: str = Field("outputs", description="Directory where the Plotly HTML figure will be written")
 
 # class OpenNeuroSearchRequest(BaseModel):
 #     query: str = Field(..., min_length=1, description="Keyword query for OpenNeuro datasets")
@@ -1964,6 +1993,26 @@ Returns: Combined x and y data for normative modeling""",
                 "description": "Search PubMed via NCBI E-utilities (esearch + esummary)",
                 "parameters": PubMedSearchRequest.model_json_schema(),
             },
+            "inspect_civet_folder": {
+                "method": "POST",
+                "description": "Inspect a CIVET subject folder for common output groups.",
+                "parameters": InspectCivetFolderRequest.model_json_schema(),
+            },
+            "run_civet_qc_check": {
+                "method": "POST",
+                "description": "Parse a CIVET QC table and flag common QC problems.",
+                "parameters": RunCivetQcCheckRequest.model_json_schema(),
+            },
+            "load_cortical_thickness_map": {
+                "method": "POST",
+                "description": "Summarize a CIVET cortical thickness text file.",
+                "parameters": LoadCorticalThicknessMapRequest.model_json_schema(),
+            },
+            "visualize_civet_surface": {
+                "method": "POST",
+                "description": "Generate an interactive Plotly HTML visualization for a CIVET OBJ surface.",
+                "parameters": VisualizeCivetSurfaceRequest.model_json_schema(),
+            },
             # "openalex_search": {
             #     "method": "POST",
             #     "description": "Scholarly discovery search via OpenAlex works",
@@ -2077,6 +2126,87 @@ async def delete_file(request: Request) -> JSONResponse:
     except Exception as e:
         logger.error(f"Delete file error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Delete failed: {str(e)}")
+
+@server.custom_route("/inspect_civet_folder", methods=["POST"])
+@rate_limit
+async def http_inspect_civet_folder(request: Request) -> JSONResponse:
+    """HTTP endpoint for CIVET folder inspection."""
+    try:
+        data = await request.json()
+        validated_data = InspectCivetFolderRequest(**data)
+
+        result = inspect_civet_folder(subject_dir=validated_data.subject_dir)
+        return JSONResponse(result)
+    except ValueError as e:
+        logger.error(f"Validation error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid parameters: {str(e)}")
+    except Exception as e:
+        logger.error(f"Request error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@server.custom_route("/run_civet_qc_check", methods=["POST"])
+@rate_limit
+async def http_run_civet_qc_check(request: Request) -> JSONResponse:
+    """HTTP endpoint for CIVET QC checks."""
+    try:
+        data = await request.json()
+        validated_data = RunCivetQcCheckRequest(**data)
+
+        result = run_civet_qc_check(
+            qc_file=validated_data.qc_file,
+            subject_id=validated_data.subject_id,
+        )
+        return JSONResponse(result)
+    except ValueError as e:
+        logger.error(f"Validation error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid parameters: {str(e)}")
+    except Exception as e:
+        logger.error(f"Request error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@server.custom_route("/load_cortical_thickness_map", methods=["POST"])
+@rate_limit
+async def http_load_cortical_thickness_map(request: Request) -> JSONResponse:
+    """HTTP endpoint for CIVET cortical thickness summaries."""
+    try:
+        data = await request.json()
+        validated_data = LoadCorticalThicknessMapRequest(**data)
+
+        result = load_cortical_thickness_map(
+            thickness_file=validated_data.thickness_file,
+        )
+        return JSONResponse(result)
+    except ValueError as e:
+        logger.error(f"Validation error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid parameters: {str(e)}")
+    except Exception as e:
+        logger.error(f"Request error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@server.custom_route("/visualize_civet_surface", methods=["POST"])
+@rate_limit
+async def http_visualize_civet_surface(request: Request) -> JSONResponse:
+    """HTTP endpoint for CIVET surface visualization."""
+    try:
+        data = await request.json()
+        validated_data = VisualizeCivetSurfaceRequest(**data)
+
+        result = visualize_civet_surface(
+            surface_path=validated_data.surface_path,
+            overlay_path=validated_data.overlay_path,
+            output_dir=validated_data.output_dir,
+        )
+        return JSONResponse(result)
+    except ValueError as e:
+        logger.error(f"Validation error: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Invalid parameters: {str(e)}")
+    except Exception as e:
+        logger.error(f"Request error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 
 @server.custom_route("/run_cfc_wavelet_analysis", methods=["POST"])
 @rate_limit
